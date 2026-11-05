@@ -61,6 +61,7 @@ svg { flex-shrink: 0; }
 .hero-details > p { font-size: 15px; color: var(--muted); line-height: 1.85; }
 .hero-details strong { color: var(--color-cream); font-weight: 500; }
 .schedule { display: flex; gap: 29px; margin-top: 25px; border-top: 1px solid var(--soft-line); padding-top: 20px; }
+.hero-instruction { margin-top: 20px; }
 .schedule > div { display: flex; gap: 11px; align-items: center; }
 .schedule svg { color: var(--color-gold); }
 .schedule-label { display: block; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }

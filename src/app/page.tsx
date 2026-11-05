@@ -17,8 +17,12 @@ export default function Home() {
       <section className="hero" aria-labelledby="event-title">
         <div className="hero-eyebrow"><span className="eyebrow">SEBUAH PERJALANAN, SEBUAH KEBERSAMAAN</span><span className="edition">PRA-RAKER & RAKER 2026</span></div>
         <div className="hero-intro">
-          <div><span className="eyebrow">PENDAFTARAN KELOMPOK</span><h1 id="event-title">Langkah pertama,<br /> <em>bersama.</em><span className="sr-only"> {event.name}</span></h1></div>
-          <div className="hero-details"><p>{event.subtitle} Cukup <strong>satu perwakilan</strong> mengisi pendaftaran untuk seluruh kelompok.</p><div className="schedule">{event.schedule.map((item) => <div key={item.label}><Icon name="calendar" size={17} /><span><span className="schedule-label">{item.label}</span><time dateTime={item.start}>{item.display}</time></span></div>)}</div></div>
+          <div><span className="eyebrow">PENDAFTARAN TIM INVESTIGASI</span><h1 id="event-title">PENDAFTARAN<br /> <em>TIM INVESTIGASI</em><span className="sr-only"> {event.name}</span></h1></div>
+          <div className="hero-details">
+            <p>{event.subtitle}</p>
+            <div className="schedule">{event.schedule.map((item) => <div key={item.label}><Icon name="calendar" size={17} /><span><span className="schedule-label">{item.label}</span><time dateTime={item.start}>{item.display}</time></span></div>)}</div>
+            <p className="hero-instruction">Cukup <strong>satu perwakilan tim</strong> mengisi pendaftaran untuk seluruh anggota.</p>
+          </div>
         </div>
       </section>
       <RegistrationApp configuration={getDataConfiguration()} />

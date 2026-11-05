@@ -1,6 +1,6 @@
 export const event = {
   name: "THE SAI BUMI ENIGMA",
-  subtitle: "Satu tim. Satu langkah. Cerita yang tak terlupakan.",
+  subtitle: "Setiap petunjuk membuka peluang. Setiap anggota membawa kekuatan. Bentuk tim investigasimu dan bersiap untuk menjalankan misi.",
   schedule: [
     { label: "Pra-Raker", display: "24–25 November 2026", start: "2026-11-24", end: "2026-11-25" },
     { label: "Raker", display: "27 November 2026", start: "2026-11-27", end: "2026-11-27" },
