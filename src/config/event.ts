@@ -7,6 +7,10 @@ export const event = {
   ],
   groupNumbers: [1, 2, 3, 4],
   memberCounts: [8, 9],
+  memberQuotas: {
+    8: 1,
+    9: 3,
+  },
   timezone: "Asia/Jakarta",
   photo: { maxBytes: 3 * 1024 * 1024, types: ["image/jpeg", "image/png"] },
 } as const;

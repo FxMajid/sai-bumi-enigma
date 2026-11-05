@@ -1,9 +1,9 @@
-import { createSnapshot, registrationSchema, validatePhoto, type Participant, type RegisteredGroup, type RegistrationInput } from "@/domain/registration";
+import { createSnapshot, getMemberCountQuota, registrationSchema, validatePhoto, type Participant, type RegisteredGroup, type RegistrationInput } from "@/domain/registration";
 import { RepositoryError, type RegistrationRepository } from "./registration-repository";
 
-/** Synthetic fixtures, instantiated only in explicitly selected DEMO mode. */
+/** Synthetic fixtures, instantiated only in explicitly selected DEMO mode. Total 35 participants (3x9 + 1x8). */
 function createParticipants(): Participant[] {
-  return Array.from({ length: 36 }, (_, index) => ({
+  return Array.from({ length: 35 }, (_, index) => ({
     id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
     code: `D-${String(index + 1).padStart(3, "0")}`,
     // Deliberate same-name fixture proves that identity uses UUID, never name.
@@ -16,7 +16,7 @@ export class DemoRegistrationRepository implements RegistrationRepository {
   private groups: RegisteredGroup[] = [{
     id: "10000000-0000-4000-8000-000000000001",
     groupNumber: 2,
-    members: this.participants.slice(28, 36),
+    members: this.participants.slice(26, 35), // 9 members (1 of 3 used, leaving 2 of 9-person and 1 of 8-person)
     photoUrl: "/images/demo-team.svg",
     registeredAt: "2026-11-04T08:30:00.000Z",
   }];
@@ -37,6 +37,10 @@ export class DemoRegistrationRepository implements RegistrationRepository {
     const photoError = validatePhoto(photo);
     if (!parsed.success || photoError) {
       throw new RepositoryError("VALIDATION", photoError ?? parsed.error?.issues[0]?.message ?? "Periksa data kelompok.");
+    }
+    const quotas = getMemberCountQuota(this.groups);
+    if (!quotas[input.memberCount].available) {
+      throw new RepositoryError("CONFLICT", `Kuota kelompok dengan ${input.memberCount} anggota sudah terpenuhi (maksimal ${quotas[input.memberCount].max} kelompok).`);
     }
     const assigned = new Set(this.groups.flatMap((group) => group.members.map((member) => member.id)));
     if (this.groups.some((group) => group.groupNumber === input.groupNumber) || input.participantIds.some((id) => assigned.has(id))) {

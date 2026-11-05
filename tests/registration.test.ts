@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { registrationSchema, validatePhoto } from "../src/domain/registration";
+import { getMemberCountQuota, registrationSchema, validatePhoto } from "../src/domain/registration";
 import { DemoRegistrationRepository } from "../src/repositories/demo-repository";
 import { getDataConfiguration } from "../src/server/config";
 
@@ -43,6 +43,41 @@ test("demo rejects occupied groups and participants even if called outside the U
   // Consumers cannot mutate the repository through a returned snapshot.
   updated.participants.length = 0;
   assert.equal((await repo.getSnapshot()).statistics.total, data.statistics.total);
+  repo.dispose();
+});
+
+test("enforces team quota: 9 members max 3 groups, 8 members max 1 group", async () => {
+  const repo = new DemoRegistrationRepository();
+  const data = await repo.getSnapshot();
+  const quotas = getMemberCountQuota(data.groups);
+  assert.equal(quotas[8].max, 1);
+  assert.equal(quotas[9].max, 3);
+  assert.equal(quotas[8].available, true); // initial demo has 0 of 8-person groups
+  assert.equal(quotas[9].available, true); // initial demo has 1 of 9-person groups (1/3)
+
+  // Register the single allowed 8-member group (group 1)
+  const photo = new File(["demo"], "demo.png", { type: "image/png" });
+  await repo.register({
+    groupNumber: 1,
+    memberCount: 8,
+    participantIds: data.availableParticipants.slice(0, 8).map((p) => p.id),
+    consent: true,
+  }, photo);
+
+  // Now 8-member quota is exhausted (1/1)
+  const afterFirst = await repo.getSnapshot();
+  const quotasAfter = getMemberCountQuota(afterFirst.groups);
+  assert.equal(quotasAfter[8].available, false);
+  assert.equal(quotasAfter[8].registered, 1);
+
+  // Attempting another 8-member group must be rejected with CONFLICT
+  await assert.rejects(repo.register({
+    groupNumber: 3,
+    memberCount: 8,
+    participantIds: afterFirst.availableParticipants.slice(0, 8).map((p) => p.id),
+    consent: true,
+  }, photo), { code: "CONFLICT" });
+
   repo.dispose();
 });
 
