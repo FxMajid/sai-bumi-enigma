@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEv
 import { event, formatRegistrationTime } from "@/config/event";
 import type { DataConfiguration } from "@/config/runtime";
 import { getMemberCountQuota, registrationSchema, validatePhoto, type RegisteredGroup, type RegistrationSnapshot } from "@/domain/registration";
+import { generateRegistrationExcel } from "@/domain/excel-export";
 import { createRegistrationRepository } from "@/repositories";
 import { RepositoryError, type RegistrationRepository } from "@/repositories/registration-repository";
 import { Icon } from "./icon";
@@ -50,6 +51,7 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
   const [success, setSuccess] = useState<RegisteredGroup | null>(null);
   const [refreshWarning, setRefreshWarning] = useState(false);
   const [unregisteredSearch, setUnregisteredSearch] = useState("");
+  const [exporting, setExporting] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
   const successRef = useRef<HTMLDivElement>(null);
 
@@ -206,6 +208,30 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
     }
   }, []);
 
+  function handleExportExcel() {
+    if (!snapshot || exporting) return;
+    setExporting(true);
+    try {
+      const uint8 = generateRegistrationExcel(snapshot);
+      const blob = new Blob([uint8 as unknown as BlobPart], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sai-bumi-enigma-rekap-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error("Gagal membuat file Excel:", err);
+      alert("Gagal mengunduh file Excel. Silakan coba kembali.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   useEffect(() => {
     if (loadState !== "ready") return;
     let active = true;
@@ -298,7 +324,26 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
           <section className="guide-panel"><span className="eyebrow">SEBELUM MEMULAI</span><h3>Semua punya peran.<br />Semua ikut dalam cerita.</h3><ul><li><Icon name="check" size={16} />Satu perwakilan untuk satu kelompok.</li><li><Icon name="check" size={16} />Setiap peserta hanya di satu kelompok.</li><li><Icon name="check" size={16} />Aturan kelompok: 9 orang (maks. 3 kelompok) & 8 orang (hanya 1 kelompok).</li><li><Icon name="check" size={16} />Siapkan foto lengkap seluruh anggota.</li></ul><p>Nama belum ada atau keliru? Hubungi panitia untuk memperbarui daftar peserta.</p></section>
         </aside>
       </div>
-      <section id="kelompok" className="registered-section" aria-labelledby="registered-title"><div className="section-heading"><div><span className="eyebrow">JEJAK KEBERSAMAAN</span><h2 id="registered-title">Kelompok terdaftar<span className="heading-period">.</span></h2></div><span className="section-counter">{snapshot.groups.length} DARI {event.groupNumbers.length} KELOMPOK {isDemo && <span className="demo-tag">DEMO</span>}</span></div>
+      <section id="kelompok" className="registered-section" aria-labelledby="registered-title">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">JEJAK KEBERSAMAAN</span>
+            <h2 id="registered-title">Kelompok terdaftar<span className="heading-period">.</span></h2>
+          </div>
+          <div className="section-heading-actions">
+            <span className="section-counter">{snapshot.groups.length} DARI {event.groupNumbers.length} KELOMPOK {isDemo && <span className="demo-tag">DEMO</span>}</span>
+            <button
+              type="button"
+              className="button button-outline export-button"
+              onClick={handleExportExcel}
+              disabled={exporting}
+              title="Unduh seluruh data pendaftaran ke file Excel (.xlsx)"
+            >
+              {exporting ? <span className="spinner small" /> : <Icon name="download" size={16} />}
+              <span>{exporting ? "Menyiapkan Excel…" : "Unduh Rekap Excel (.xlsx)"}</span>
+            </button>
+          </div>
+        </div>
         {snapshot.groups.length === 0 ? <div className="empty-panel"><Icon name="people" size={28} /><h3>Cerita pertama menunggu Anda.</h3><p>Belum ada kelompok terdaftar. Jadilah tim pertama yang memulai.</p></div> : <div className="registered-grid">{[...snapshot.groups].sort((a, b) => a.groupNumber - b.groupNumber).map((group) => <article className="group-card panel" key={group.id}><div className="group-photo"><GroupPhoto groupId={group.id} demoUrl={group.photoUrl} isDemo={isDemo} label={`Foto kelompok ${group.groupNumber}${isDemo ? " — DEMO" : ""}`} /><span className="group-photo-badge">KELOMPOK {String(group.groupNumber).padStart(2, "0")}</span></div><div className="group-card-content"><div className="group-card-heading"><h3>Kelompok {String(group.groupNumber).padStart(2, "0")}</h3><span><Icon name="people" size={15} />{group.members.length} anggota</span></div><ul>{group.members.map((member) => <li key={member.id}><span>{member.name}</span><span className="participant-code">{member.code}</span></li>)}</ul><p className="registered-time"><Icon name="calendar" size={14} /><time dateTime={group.registeredAt}>{formatRegistrationTime(group.registeredAt)}</time></p></div></article>)}</div>}
       </section>
       <details className="unregistered panel"><summary><span className="unregistered-title"><Icon name="people" size={21} /><span>Peserta yang belum terdaftar ({remaining.length})</span></span><Icon name="chevron" size={20} /></summary><div className="unregistered-content"><p>Masih menunggu rekan perjalanan. Cari nama atau kode peserta di bawah.</p><label htmlFor="unregistered-search" className="sr-only">Cari peserta yang belum terdaftar</label><div className="search-shell"><Icon name="search" size={18} /><input id="unregistered-search" type="search" placeholder="Cari nama atau kode peserta…" value={unregisteredSearch} onChange={(e) => setUnregisteredSearch(e.target.value)} /></div><p className="small-text" role="status">{filteredRemaining.length} peserta ditampilkan</p>{filteredRemaining.length ? <ul className="unregistered-list">{filteredRemaining.map((participant) => <li key={participant.id}><span>{participant.name}</span><span className="participant-code">{participant.code}</span></li>)}</ul> : <div className="empty-search">{remaining.length === 0 ? "Semua peserta sudah tergabung dalam kelompok." : "Tidak ada nama atau kode yang cocok dengan pencarian."}</div>}</div></details>
