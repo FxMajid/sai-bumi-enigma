@@ -5,6 +5,7 @@ const paths = {
   check: <path d="m5 12 4 4L19 6" />,
   chevron: <path d="m6 9 6 6 6-6" />,
   upload: <><path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4" /></>,
+  download: <><path d="M12 4v12m-5-5 5 5 5-5M4 16v4h16v-4" /></>,
   search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></>,
   people: <><circle cx="9" cy="7" r="3" /><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 4a3 3 0 0 1 0 6m2 4a6 6 0 0 1 3 5v2" /></>,
   calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v4m10-4v4M3 11h18" /></>,

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { getMemberCountQuota, registrationSchema, validatePhoto } from "../src/domain/registration";
 import { DemoRegistrationRepository } from "../src/repositories/demo-repository";
 import { getDataConfiguration } from "../src/server/config";
+import { generateRegistrationExcel } from "../src/domain/excel-export";
 
 test("demo statistics come from participants and group membership", async () => {
   const repo = new DemoRegistrationRepository();
@@ -78,6 +79,20 @@ test("enforces team quota: 9 members max 3 groups, 8 members max 1 group", async
     consent: true,
   }, photo), { code: "CONFLICT" });
 
+  repo.dispose();
+});
+
+test("excel export creates a valid xlsx workbook buffer from snapshot", async () => {
+  const repo = new DemoRegistrationRepository();
+  const snapshot = await repo.getSnapshot();
+  const buffer = generateRegistrationExcel(snapshot);
+  assert.ok(buffer instanceof Uint8Array);
+  assert.ok(buffer.length > 1000);
+  // Check ZIP / OpenXML header signature (PK\x03\x04)
+  assert.equal(buffer[0], 0x50);
+  assert.equal(buffer[1], 0x4b);
+  assert.equal(buffer[2], 0x03);
+  assert.equal(buffer[3], 0x04);
   repo.dispose();
 });
 
