@@ -107,6 +107,10 @@ svg { flex-shrink: 0; }
 .count-options { display: flex; gap: 8px; }
 .count-options label { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 9px 14px; border: 1px solid var(--line); cursor: pointer; position: relative; font-size: 12px; }
 .count-options label.is-selected { color: var(--color-gold); border-color: var(--color-gold); background: #302319; }
+.count-options label.is-disabled { border-color: #403735; background: #201c1c; cursor: not-allowed; color: #a69a90; }
+.count-options .quota-tag { font-size: 10px; opacity: 0.85; padding: 2px 6px; border-radius: 2px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.08); margin-left: 2px; }
+.count-options label.is-selected .quota-tag { border-color: rgba(201, 178, 133, 0.35); color: var(--color-gold); }
+.count-options label.is-disabled .quota-tag { color: #887e75; border-color: transparent; }
 .field-help { color: var(--muted); font-size: 11px; line-height: 1.75; }
 .member-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 17px 14px; margin-top: 21px; }
 .participant-field { position: relative; min-width: 0; }

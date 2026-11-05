@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { event, formatRegistrationTime } from "@/config/event";
 import type { DataConfiguration } from "@/config/runtime";
-import { registrationSchema, validatePhoto, type RegisteredGroup, type RegistrationSnapshot } from "@/domain/registration";
+import { getMemberCountQuota, registrationSchema, validatePhoto, type RegisteredGroup, type RegistrationSnapshot } from "@/domain/registration";
 import { createRegistrationRepository } from "@/repositories";
 import { RepositoryError, type RegistrationRepository } from "@/repositories/registration-repository";
 import { Icon } from "./icon";
@@ -32,8 +32,8 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const [groupNumber, setGroupNumber] = useState<number | null>(null);
-  const [memberCount, setMemberCount] = useState<8 | 9>(8);
-  const [selections, setSelections] = useState<string[]>(Array(8).fill(""));
+  const [memberCount, setMemberCount] = useState<8 | 9>(9);
+  const [selections, setSelections] = useState<string[]>(Array(9).fill(""));
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -63,7 +63,18 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
         if (!active) { ownedRepository.dispose(); return; }
         repository.current = ownedRepository;
         const data = await ownedRepository.getSnapshot();
-        if (active) { setSnapshot(data); setLoadState("ready"); }
+        if (active) {
+          setSnapshot(data);
+          const currentQuotas = getMemberCountQuota(data.groups);
+          if (!currentQuotas[9].available && currentQuotas[8].available) {
+            setMemberCount(8);
+            setSelections(Array(8).fill(""));
+          } else if (!currentQuotas[8].available && currentQuotas[9].available) {
+            setMemberCount(9);
+            setSelections(Array(9).fill(""));
+          }
+          setLoadState("ready");
+        }
       } catch {
         if (active) setLoadState("error");
       }
@@ -76,6 +87,7 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
   useEffect(() => { if (success) { successRef.current?.focus(); successRef.current?.scrollIntoView({ block: "center" }); } }, [success]);
   useEffect(() => { if (submitError) errorRef.current?.focus(); }, [submitError]);
 
+  const quotas = getMemberCountQuota(snapshot?.groups ?? []);
   const assigned = new Set(snapshot?.groups.flatMap((group) => group.members.map((member) => member.id)) ?? []);
   const takenGroups = new Set(snapshot?.groups.map((group) => group.groupNumber) ?? []);
   const selectedMembers = selections.flatMap((id) => snapshot?.participants.find((participant) => participant.id === id) ?? []);
@@ -133,6 +145,11 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
       setSubmitError("Pendaftaran belum lengkap. Periksa nomor kelompok, seluruh anggota, foto tim, dan persetujuan publikasi.");
       return;
     }
+    const currentQuotas = getMemberCountQuota(snapshot?.groups ?? []);
+    if (!currentQuotas[memberCount].available) {
+      setSubmitError(`Kuota kelompok ${memberCount} orang sudah terpenuhi (maksimal ${currentQuotas[memberCount].max} kelompok). Silakan pilih jumlah anggota lain.`);
+      return;
+    }
     if (!submissionUncertain && (groupConflict || unavailableIds.size > 0)) {
       setSubmitError("Sebagian pilihan sudah digunakan. Perbaiki kolom bertanda konflik; pilihan lain dan foto tetap tersedia."); return;
     }
@@ -158,7 +175,10 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
   }
 
   function resetForm() {
-    setSuccess(null); setSubmissionUncertain(false); setPhotoExpiresAt(null); setGroupNumber(null); setSelections(Array(8).fill("")); setMemberCount(8);
+    const currentQuotas = getMemberCountQuota(snapshot?.groups ?? []);
+    const defaultCount = currentQuotas[9].available ? 9 : 8;
+    setSuccess(null); setSubmissionUncertain(false); setPhotoExpiresAt(null); setGroupNumber(null);
+    setSelections(Array(defaultCount).fill("")); setMemberCount(defaultCount);
     setPhoto(null); setPreview(null); setPhotoError(null); setConsent(false); setSubmitted(false); setSubmitError(null);
   }
 
@@ -168,7 +188,19 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
     const requestId = ++snapshotRequest.current;
     try {
       const data = await current.getSnapshot();
-      if (repository.current === current && requestId === snapshotRequest.current) { setSnapshot(data); setRefreshWarning(false); }
+      if (repository.current === current && requestId === snapshotRequest.current) {
+        setSnapshot(data);
+        setRefreshWarning(false);
+        const currentQuotas = getMemberCountQuota(data.groups);
+        setMemberCount((prev) => {
+          if (!currentQuotas[prev].available) {
+            const next = (event.memberCounts.find((c) => currentQuotas[c].available) ?? 9) as 8 | 9;
+            setSelections((values) => Array.from({ length: next }, (_, index) => values[index] ?? ""));
+            return next;
+          }
+          return prev;
+        });
+      }
     } catch {
       if (repository.current === current && requestId === snapshotRequest.current) setRefreshWarning(true);
     }
@@ -222,9 +254,22 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
                   {event.groupNumbers.map((number) => <label key={number} className={`group-option ${takenGroups.has(number) ? "is-taken" : ""} ${groupNumber === number ? "is-selected" : ""}`}><input type="radio" name="groupNumber" value={number} checked={groupNumber === number} disabled={takenGroups.has(number)} onChange={() => setGroupNumber(number)} /><span className="group-option-top"><span>KELOMPOK</span>{groupNumber === number && <Icon name="check" size={15} />}</span><strong>{String(number).padStart(2, "0")}</strong><span className="group-status">{takenGroups.has(number) ? "Terdaftar" : "Tersedia"}</span></label>)}
                 </div>{((submitted && !groupNumber) || groupConflict) && <p id="group-error" className="field-error">{groupConflict ? "Nomor ini baru saja digunakan kelompok lain. Pilih nomor lain." : "Pilih satu nomor kelompok yang tersedia."}</p>}
               </fieldset>
-              <fieldset disabled={saving} className="form-step"><legend className="sr-only">Jumlah dan nama anggota</legend><StepTitle number="02" title="Lengkapi anggota tim" description="Pilih jumlah anggota, lalu cari setiap nama di daftar peserta." />
-                <div className="member-count-row"><span id="member-count-label">Jumlah anggota <span className="gold">*</span></span><div className="count-options" role="radiogroup" aria-labelledby="member-count-label">{event.memberCounts.map((count) => <label className={memberCount === count ? "is-selected" : ""} key={count}><input type="radio" name="memberCount" value={count} checked={memberCount === count} onChange={() => { setMemberCount(count); setSelections((values) => Array.from({ length: count }, (_, index) => values[index] ?? "")); }} /><Icon name="people" size={17} />{count} orang</label>)}</div></div>
-                <p id="member-help" className="field-help">Gunakan kode peserta untuk membedakan nama yang sama. Peserta yang sudah dipilih atau terdaftar tidak muncul di pilihan lain.</p>
+              <fieldset disabled={saving} className="form-step"><legend className="sr-only">Jumlah dan nama anggota</legend><StepTitle number="02" title="Lengkapi anggota tim" description="Pilih jumlah anggota sesuai kuota yang tersedia (9 orang maks. 3 kelompok, 8 orang maks. 1 kelompok), lalu cari setiap nama di daftar peserta." />
+                <div className="member-count-row"><span id="member-count-label">Jumlah anggota <span className="gold">*</span></span>
+                  <div className="count-options" role="radiogroup" aria-labelledby="member-count-label">
+                    {event.memberCounts.map((count) => {
+                      const quota = quotas[count];
+                      const isUnavailable = !quota.available;
+                      return <label key={count} className={`${memberCount === count ? "is-selected" : ""} ${isUnavailable ? "is-disabled" : ""}`} title={isUnavailable ? `Kuota kelompok ${count} orang sudah penuh (${quota.max}/${quota.max} kelompok)` : undefined}>
+                        <input type="radio" name="memberCount" value={count} checked={memberCount === count} disabled={isUnavailable} onChange={() => { setMemberCount(count); setSelections((values) => Array.from({ length: count }, (_, index) => values[index] ?? "")); }} />
+                        <Icon name="people" size={17} />
+                        <span>{count} orang</span>
+                        <small className="quota-tag">{isUnavailable ? "Penuh" : `Sisa ${quota.max - quota.registered}`}</small>
+                      </label>;
+                    })}
+                  </div>
+                </div>
+                <p id="member-help" className="field-help">Aturan kuota: 9 orang (maksimal 3 kelompok) dan 8 orang (hanya 1 kelompok). Gunakan kode peserta untuk membedakan nama yang sama. Peserta yang sudah dipilih atau terdaftar tidak muncul di pilihan lain.</p>
                 <div className="member-grid">{selections.map((value, index) => <ParticipantPicker key={index} index={index} value={value} participants={snapshot.participants} excluded={new Set([...assigned, ...selections.filter((_, i) => i !== index)])} invalid={(submitted && !value) || unavailableIds.has(value)} conflict={unavailableIds.has(value)} onChange={(id) => setSelections((values) => values.map((current, i) => i === index ? id : current))} />)}</div>
               </fieldset>
               <fieldset disabled={saving} className="form-step"><legend className="sr-only">Foto lengkap tim</legend><StepTitle number="03" title="Satu foto, seluruh cerita" description="JPG/PNG saja. File asli maksimal 3 MiB (3.145.728 byte), sisi maksimal 12.000 px dan total 40 megapixel. Foto diperiksa dan metadata dihapus server." />
@@ -250,7 +295,7 @@ export function RegistrationApp({ configuration }: { configuration: DataConfigur
               return <li key={index}><span className={`recap-index ${member ? "filled" : ""}`}>{String(index + 1).padStart(2, "0")}</span><span className={member ? "" : "recap-empty"}>{member ? <>{member.name}<small>{member.code}</small></> : "Belum dipilih"}</span>{member && <Icon name="check" size={14} />}</li>;
             })}</ol><div className="recap-photo"><Icon name={photo ? "check" : "upload"} size={17} /><span>{photo ? "Foto tim sudah siap" : "Foto tim belum diunggah"}</span></div>
           </section>
-          <section className="guide-panel"><span className="eyebrow">SEBELUM MEMULAI</span><h3>Semua punya peran.<br />Semua ikut dalam cerita.</h3><ul><li><Icon name="check" size={16} />Satu perwakilan untuk satu kelompok.</li><li><Icon name="check" size={16} />Setiap peserta hanya di satu kelompok.</li><li><Icon name="check" size={16} />Siapkan foto lengkap 8 atau 9 anggota.</li></ul><p>Nama belum ada atau keliru? Hubungi panitia untuk memperbarui daftar peserta.</p></section>
+          <section className="guide-panel"><span className="eyebrow">SEBELUM MEMULAI</span><h3>Semua punya peran.<br />Semua ikut dalam cerita.</h3><ul><li><Icon name="check" size={16} />Satu perwakilan untuk satu kelompok.</li><li><Icon name="check" size={16} />Setiap peserta hanya di satu kelompok.</li><li><Icon name="check" size={16} />Aturan kelompok: 9 orang (maks. 3 kelompok) & 8 orang (hanya 1 kelompok).</li><li><Icon name="check" size={16} />Siapkan foto lengkap seluruh anggota.</li></ul><p>Nama belum ada atau keliru? Hubungi panitia untuk memperbarui daftar peserta.</p></section>
         </aside>
       </div>
       <section id="kelompok" className="registered-section" aria-labelledby="registered-title"><div className="section-heading"><div><span className="eyebrow">JEJAK KEBERSAMAAN</span><h2 id="registered-title">Kelompok terdaftar<span className="heading-period">.</span></h2></div><span className="section-counter">{snapshot.groups.length} DARI {event.groupNumbers.length} KELOMPOK {isDemo && <span className="demo-tag">DEMO</span>}</span></div>

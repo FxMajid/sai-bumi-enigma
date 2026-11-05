@@ -21,7 +21,7 @@ export default function Home() {
           <div className="hero-details">
             <p>{event.subtitle}</p>
             <div className="schedule">{event.schedule.map((item) => <div key={item.label}><Icon name="calendar" size={17} /><span><span className="schedule-label">{item.label}</span><time dateTime={item.start}>{item.display}</time></span></div>)}</div>
-            <p className="hero-instruction">Cukup <strong>satu perwakilan tim</strong> mengisi pendaftaran untuk seluruh anggota.</p>
+            <p className="hero-instruction">Cukup <strong>satu perwakilan tim</strong> mengisi pendaftaran untuk seluruh anggota. Aturan kelompok: <strong>9 orang (3 kelompok)</strong> dan <strong>8 orang (1 kelompok)</strong>.</p>
           </div>
         </div>
       </section>

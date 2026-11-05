@@ -32,6 +32,17 @@ export const registeredGroupSchema = z.object({
 });
 export type RegisteredGroup = z.infer<typeof registeredGroupSchema>;
 
+export type MemberQuotaInfo = { registered: number; max: number; available: boolean };
+
+export function getMemberCountQuota(groups: Pick<RegisteredGroup, "members">[]): Record<8 | 9, MemberQuotaInfo> {
+  const registered8 = groups.filter((g) => g.members.length === 8).length;
+  const registered9 = groups.filter((g) => g.members.length === 9).length;
+  return {
+    8: { registered: registered8, max: event.memberQuotas[8], available: registered8 < event.memberQuotas[8] },
+    9: { registered: registered9, max: event.memberQuotas[9], available: registered9 < event.memberQuotas[9] },
+  };
+}
+
 export const registrationSnapshotSchema = z.object({
   registrationOpen: z.boolean(),
   participants: z.array(participantSchema),
@@ -43,6 +54,13 @@ export const registrationSnapshotSchema = z.object({
   const assigned = value.groups.flatMap((g) => g.members.map((p) => p.id));
   const assignedIds = new Set(assigned);
   const availableIds = new Set(value.availableParticipants.map((p) => p.id));
+  const count8 = value.groups.filter((g) => g.members.length === 8).length;
+  const count9 = value.groups.filter((g) => g.members.length === 9).length;
+
+  if (count8 > event.memberQuotas[8] || count9 > event.memberQuotas[9]) {
+    ctx.addIssue({ code: "custom", message: "Komposisi kelompok melebihi batas kuota (maksimal 3 kelompok 9 orang dan 1 kelompok 8 orang)." });
+  }
+
   if (participantIds.size !== value.participants.length || assignedIds.size !== assigned.length
     || assigned.some((id) => !participantIds.has(id)) || availableIds.size !== value.availableParticipants.length
     || value.availableParticipants.some((p) => !participantIds.has(p.id) || assignedIds.has(p.id))
