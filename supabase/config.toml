@@ -1,0 +1,4 @@
+project_id = "sai-bumi-enigma"
+
+[db.seed]
+enabled = false

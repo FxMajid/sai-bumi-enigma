@@ -1,0 +1,12 @@
+.env*
+!.env.example
+supabase/import/
+supabase/templates/participants.csv
+supabase/.temp/
+supabase/.branches/
+node_modules/
+.next/
+test-results/
+playwright-report/
+coverage/
+*.log

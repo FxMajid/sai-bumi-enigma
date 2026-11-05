@@ -1,0 +1,25 @@
+\set ON_ERROR_STOP on
+\if :{?event_slug}
+\else
+  \echo 'Required: -v event_slug=the-sai-bumi-enigma-2026'
+  \quit 1
+\endif
+
+begin;
+create temporary table participant_import (participant_code text, full_name text) on commit drop;
+-- Run psql from the repository root; this local file is Git-ignored.
+\copy participant_import(participant_code,full_name) from 'supabase/import/participants.csv' with (format csv, header true, encoding 'UTF8')
+create temporary table import_event on commit drop as
+  select id from public.events where slug = :'event_slug';
+do $$
+begin
+  if (select count(*) from import_event) <> 1 then raise exception 'Event slug must match exactly one event'; end if;
+  if not exists (select 1 from participant_import) then raise exception 'CSV has no participant rows'; end if;
+end $$;
+select e.id from public.events e join import_event i on i.id = e.id for update of e;
+-- Insert-only: duplicate codes abort the entire transaction instead of silently
+-- overwriting a participant identity/name. Correct existing master rows separately.
+insert into public.participants(event_id, participant_code, full_name)
+select e.id, btrim(p.participant_code), btrim(p.full_name) from participant_import p cross join import_event e;
+select count(*) as imported_rows from participant_import;
+commit;
