@@ -1,5 +1,7 @@
-import { formatRegistrationTime } from "@/config/event";
+import { formatRegistrationTime, getGroupTitle } from "@/config/event";
 import type { RegistrationSnapshot } from "@/domain/registration";
+import type { QuizSubmissionRecord } from "@/domain/quiz";
+import type { AttendanceMember } from "@/domain/attendance";
 
 const encoder = new TextEncoder();
 
@@ -25,6 +27,9 @@ function concatUint8Arrays(arrays: Uint8Array[]): Uint8Array {
   }
   return result;
 }
+
+import { generateCode128Svg } from "./barcode-svg";
+import type { AttendanceMember } from "./attendance";
 
 interface ZipFileEntry {
   name: string;
@@ -272,11 +277,11 @@ export function generateRegistrationExcel(snapshot: RegistrationSnapshot): Uint8
       { cells: [] },
       {
         style: 1,
-        cells: ["No", "Nomor Kelompok", "Jumlah Anggota", "Daftar Anggota Tim", "Waktu Pendaftaran"],
+        cells: ["No", "Kelompok", "Jumlah Anggota", "Daftar Anggota Tim", "Waktu Pendaftaran"],
       },
       ...sortedGroups.map((g, idx) => [
         idx + 1,
-        `Kelompok ${String(g.groupNumber).padStart(2, "0")}`,
+        getGroupTitle(g.groupNumber),
         `${g.members.length} orang`,
         g.members.map((m) => `${m.name} (${m.code})`).join(", "),
         formatRegistrationTime(g.registeredAt),
@@ -296,7 +301,7 @@ export function generateRegistrationExcel(snapshot: RegistrationSnapshot): Uint8
     g.members.forEach((m, mIdx) => {
       detailRows.push([
         detailCount++,
-        `Kelompok ${String(g.groupNumber).padStart(2, "0")}`,
+        getGroupTitle(g.groupNumber),
         mIdx + 1,
         m.code,
         m.name,
@@ -341,7 +346,7 @@ export function generateRegistrationExcel(snapshot: RegistrationSnapshot): Uint8
         idx + 1,
         p.code,
         p.name,
-        g ? `Kelompok ${String(g.groupNumber).padStart(2, "0")}` : "-",
+        g ? getGroupTitle(g.groupNumber) : "-",
         g ? "Terdaftar" : "Belum Terdaftar",
       ];
     }),
@@ -355,3 +360,167 @@ export function generateRegistrationExcel(snapshot: RegistrationSnapshot): Uint8
   return buildXlsxUint8Array([summarySheet, detailSheet, remainingSheet, allSheet]);
 }
 
+
+
+export function generateQuizScoresExcel(submissions: QuizSubmissionRecord[]): Uint8Array {
+  const exportTime = formatRegistrationTime(new Date().toISOString());
+
+  // Sheet 1: Rekap Nilai Peserta (Urut Ranking)
+  const sortedSubmissions = [...submissions].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.timeSpentSeconds - b.timeSpentSeconds;
+  });
+
+  const totalScore = submissions.reduce((acc, s) => acc + s.score, 0);
+  const avgScore = submissions.length > 0 ? (totalScore / submissions.length).toFixed(1) : "0";
+
+  const rows: RowInput[] = [
+    { style: 2, cells: ["THE SAI BUMI ENIGMA — REKAPITULASI NILAI QUIZ"] },
+    { style: 3, cells: [`Waktu Unduh: ${exportTime}`] },
+    { cells: [`Total Peserta Menyelesaikan: ${submissions.length} orang | Rata-rata Nilai: ${avgScore}`] },
+    { cells: [] },
+    {
+      style: 1,
+      cells: [
+        "Peringkat",
+        "Kode Peserta",
+        "Nama Peserta",
+        "Kelompok Tim",
+        "Skor (100)",
+        "Jawaban Benar",
+        "Jawaban Salah",
+        "Waktu Pengerjaan",
+        "Waktu Submit",
+      ],
+    },
+    ...sortedSubmissions.map((s, idx) => {
+      const mins = Math.floor(s.timeSpentSeconds / 60);
+      const secs = s.timeSpentSeconds % 60;
+      return [
+        idx + 1,
+        s.participantCode,
+        s.participantName,
+        s.groupName || getGroupTitle(s.groupNumber),
+        s.score,
+        `${s.correctCount} / ${s.totalQuestions}`,
+        `${s.wrongCount} soal`,
+        `${mins}m ${secs}s`,
+        formatRegistrationTime(s.completedAt),
+      ];
+    }),
+  ];
+
+  const mainSheet: SheetDefinition = {
+    name: "Rekap Nilai Kuis",
+    cols: [10, 16, 32, 26, 14, 16, 16, 20, 26],
+    rows,
+  };
+
+  return buildXlsxUint8Array([mainSheet]);
+}
+
+export function generateAttendanceExcel(
+  roster: AttendanceMember[],
+  records: Record<string, string>
+): Uint8Array {
+  const exportTime = formatRegistrationTime(new Date().toISOString());
+  const attendedCount = roster.filter((m) => records[m.nik]).length;
+  const totalCount = roster.length;
+
+  const attendanceRows: RowInput[] = [
+    { style: 2, cells: ["THE SAI BUMI ENIGMA — REKAPITULASI ABSENSI KEHADIRAN"] },
+    { style: 3, cells: [`Waktu Unduh: ${exportTime}`] },
+    { cells: [`Total Peserta: ${totalCount} | Hadir: ${attendedCount} | Belum Hadir: ${totalCount - attendedCount}`] },
+    { cells: [] },
+    {
+      style: 1,
+      cells: [
+        "No",
+        "NIK",
+        "Nama Peserta",
+        "Departemen",
+        "Posisi",
+        "Status Rank",
+        "Jabatan",
+        "Kelompok Tim",
+        "Gender",
+        "Status Kehadiran",
+        "Waktu Hadir",
+      ],
+    },
+    ...roster.map((m) => {
+      const timestamp = records[m.nik];
+      const isPresent = Boolean(timestamp);
+      const timeStr = timestamp ? formatRegistrationTime(timestamp) : "-";
+      return [
+        m.no,
+        m.nik,
+        m.nama,
+        m.dept,
+        m.posisi,
+        m.statusRank,
+        m.jabatan,
+        m.namaKelompok,
+        m.genderLabel,
+        isPresent ? "HADIR" : "BELUM HADIR",
+        timeStr,
+      ];
+    }),
+  ];
+
+  const attendanceSheet: SheetDefinition = {
+    name: "Daftar Absensi",
+    cols: [6, 14, 30, 16, 36, 16, 18, 22, 14, 18, 26],
+    rows: attendanceRows,
+  };
+
+  // Group summary sheet
+  const groups = ["Team Lupin", "Detective Lupin", "CONAN", "HOLMES"];
+  const summaryRows: RowInput[] = [
+    { style: 2, cells: ["REKAP KEHADIRAN PER KELOMPOK"] },
+    { cells: [] },
+    {
+      style: 1,
+      cells: ["Kelompok", "Total Anggota", "Hadir", "Belum Hadir", "Persentase Kehadiran"],
+    },
+    ...groups.map((grp) => {
+      const members = roster.filter((m) => m.namaKelompok === grp);
+      const present = members.filter((m) => records[m.nik]).length;
+      const pct = members.length > 0 ? Math.round((present / members.length) * 100) : 0;
+      return [grp, members.length, present, members.length - present, `${pct}%`];
+    }),
+  ];
+
+  const groupSheet: SheetDefinition = {
+    name: "Ringkasan per Kelompok",
+    cols: [24, 16, 14, 16, 22],
+    rows: summaryRows,
+  };
+
+  return buildXlsxUint8Array([attendanceSheet, groupSheet]);
+}
+
+/**
+ * Generates a ZIP archive containing Code 128 barcode SVGs for all participants.
+ * Each file is named: "[Nama] - [NIK].svg"
+ */
+export function generateBarcodesZip(roster: AttendanceMember[]): Uint8Array {
+  const files: ZipFileEntry[] = roster.map((m) => {
+    const svg = generateCode128Svg(m.barcode, {
+      height: 70,
+      barWidth: 2,
+      color: "#111111",
+      bgColor: "#ffffff",
+      showText: true,
+    });
+    // Sanitize filename for safe extraction across all OS (Windows, Mac, Linux)
+    const safeName = m.nama.replace(/[/\\?%*:|"<>]/g, "").trim();
+    const safeNik = m.nik.replace(/[/\\?%*:|"<>]/g, "").trim();
+    return {
+      name: `${safeName} - ${safeNik}.svg`,
+      content: svg,
+    };
+  });
+
+  return createZipStore(files);
+}
