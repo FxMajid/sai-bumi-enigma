@@ -1,3 +1,20 @@
+export const officialGroups = [
+  { number: 1, name: "Lupin", title: "Kelompok 1: Lupin" },
+  { number: 2, name: "Detectif Jubun", title: "Kelompok 2: Detectif Jubun" },
+  { number: 3, name: "Conan", title: "Kelompok 3: Conan" },
+  { number: 4, name: "Holmes", title: "Kelompok 4: Holmes" },
+] as const;
+
+export function getGroupName(groupNumber: number): string {
+  const found = officialGroups.find((g) => g.number === groupNumber);
+  return found ? found.name : `Kelompok ${groupNumber}`;
+}
+
+export function getGroupTitle(groupNumber: number): string {
+  const found = officialGroups.find((g) => g.number === groupNumber);
+  return found ? found.title : `Kelompok ${groupNumber}`;
+}
+
 export const event = {
   name: "THE SAI BUMI ENIGMA",
   subtitle: "Setiap petunjuk membuka peluang. Setiap anggota membawa kekuatan. Bentuk tim investigasimu dan bersiap untuk menjalankan misi.",
