@@ -2604,6 +2604,23 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
   margin: 0 auto;
 }
 
+#attendance-camera-reader canvas {
+  display: none !important;
+}
+
+#attendance-camera-reader img[alt="Info icon"] {
+  display: none !important;
+}
+
+#attendance-camera-reader__scan_region {
+  min-height: auto !important;
+  height: auto !important;
+}
+
+#official-detective-id-card {
+  scroll-margin-top: 24px;
+}
+
 .scanner-laser-line {
   position: absolute;
   top: 0;
@@ -2629,14 +2646,6 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
     top: 92%;
     opacity: 0.3;
   }
-}
-
-#attendance-camera-reader img[alt="Info icon"] {
-  display: none !important;
-}
-
-#attendance-camera-reader__scan_region {
-  min-height: 220px;
 }
 
 #attendance-camera-reader__dashboard {

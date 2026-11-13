@@ -468,6 +468,19 @@ export function AttendanceApp() {
         return;
       }
 
+      // Otomatis matikan kamera setelah pemindaian berhasil diverifikasi
+      setIsCameraActive(false);
+
+      // Arahkan pandangan secara mulus ke radar pencarian & kartu identitas
+      if (typeof window !== "undefined") {
+        setTimeout(() => {
+          const resultElem = document.querySelector(".scanner-result-area");
+          if (resultElem) {
+            resultElem.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }, 50);
+      }
+
       // 3. Trigger magnifying glass radar search animation
       triggerSearchAnimation(member);
     },
@@ -518,6 +531,18 @@ export function AttendanceApp() {
             `ABSENSI DITOLAK: Anda berada di luar area acara PT. Tunas Dwipa Matra (TDM) (radius maksimal ${ATTENDANCE_TARGET_LOCATION.maxRadiusMeters}m).`
         );
         return;
+      }
+
+      // Otomatis matikan kamera jika sedang aktif
+      setIsCameraActive(false);
+
+      if (typeof window !== "undefined") {
+        setTimeout(() => {
+          const resultElem = document.querySelector(".scanner-result-area");
+          if (resultElem) {
+            resultElem.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }, 50);
       }
 
       // Trigger radar animation & check-in
@@ -599,6 +624,19 @@ export function AttendanceApp() {
     setTypedNameCount(scannedMember.nama.length);
     setRevealedFieldsCount(6);
   };
+
+  // Scroll otomatis ke Kartu Identitas Agen Resmi setelah radar pencarian selesai
+  useEffect(() => {
+    if (scannedMember && !isSearchingAgent) {
+      const timer = setTimeout(() => {
+        const cardElem = document.getElementById("official-detective-id-card");
+        if (cardElem) {
+          cardElem.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [scannedMember, isSearchingAgent]);
 
   // Camera barcode scanner using html5-qrcode (ZXing engine: Code 128, QR Code, Code 39, EAN 13)
   useEffect(() => {
@@ -1116,7 +1154,7 @@ export function AttendanceApp() {
 
             {/* ACTIVE RESULT: OFFICIAL DETECTIVE ID CARD (INTEGRATED TYPEWRITER, NO BARCODE) */}
             {!isSearchingAgent && scannedMember && (
-              <div className="active-result-display">
+              <div className="active-result-display" id="official-detective-id-card">
                 <div className="detective-id-card panel">
                   {/* CARD TOPBAR */}
                   <div className="id-card-header">
