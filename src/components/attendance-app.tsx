@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Html5Qrcode } from "html5-qrcode";
 import {
   ATTENDANCE_ROSTER,
@@ -136,24 +136,35 @@ function playRadarSweepSound() {
   }
 }
 
+const emptySubscribe = () => () => {};
+
 export function AttendanceApp() {
+  // Hydration-safe client mount status via React 19 standard useSyncExternalStore
+  const isMounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+
+  // Localhost environment check (Hanya izinkan mode simulasi di localhost, hydration-safe)
+  const isLocalhost = useSyncExternalStore(
+    emptySubscribe,
+    () => {
+      if (typeof window === "undefined") return false;
+      const host = window.location.hostname;
+      return (
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host.endsWith(".local") ||
+        host.startsWith("192.168.") ||
+        host.startsWith("10.") ||
+        host === "0.0.0.0"
+      );
+    },
+    () => false
+  );
+
   // Attendance Records: NIK -> ISO timestamp
-  const [, setRecords] = useState<Record<string, string>>(getStoredRecords);
+  const [, setRecords] = useState<Record<string, string>>({});
 
   // Device Lock State (Silent 1 device = 1 user)
-  const [deviceLock, setDeviceLock] = useState<DeviceLock | null>(getStoredDeviceLock);
-
-  // Lazy initializer if device already locked
-  const [initialLockedInfo] = useState(() => {
-    const lock = getStoredDeviceLock();
-    if (lock) {
-      const member = findMemberByBarcode(lock.nik);
-      if (member) {
-        return { member, time: lock.timestamp };
-      }
-    }
-    return null;
-  });
+  const [deviceLock, setDeviceLock] = useState<DeviceLock | null>(null);
 
   // Scanner state
   const [scanError, setScanError] = useState<string | null>(null);
@@ -161,20 +172,6 @@ export function AttendanceApp() {
   // Html5Qrcode Scanner instance ref & in-flight guard
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const isProcessingScanRef = useRef(false);
-
-  // Localhost environment check (Hanya izinkan mode simulasi di localhost)
-  const [isLocalhost] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const host = window.location.hostname;
-    return (
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host.endsWith(".local") ||
-      host.startsWith("192.168.") ||
-      host.startsWith("10.") ||
-      host === "0.0.0.0"
-    );
-  });
 
   // Geolocation state (PT. Tunas Dwipa Matra - TDM)
   const [userLocation, setUserLocation] = useState<{
@@ -291,18 +288,10 @@ export function AttendanceApp() {
   const [searchPhaseText, setSearchPhaseText] = useState("");
 
   // Active scanned member & Typewriter animation state on Detective ID Card
-  const [scannedMember, setScannedMember] = useState<AttendanceMember | null>(
-    () => initialLockedInfo?.member ?? null
-  );
-  const [scannedTime, setScannedTime] = useState<string | null>(
-    () => initialLockedInfo?.time ?? null
-  );
-  const [typedNameCount, setTypedNameCount] = useState<number>(
-    () => initialLockedInfo?.member?.nama.length ?? 0
-  );
-  const [revealedFieldsCount, setRevealedFieldsCount] = useState<number>(
-    () => (initialLockedInfo?.member ? 6 : 0)
-  );
+  const [scannedMember, setScannedMember] = useState<AttendanceMember | null>(null);
+  const [scannedTime, setScannedTime] = useState<string | null>(null);
+  const [typedNameCount, setTypedNameCount] = useState<number>(0);
+  const [revealedFieldsCount, setRevealedFieldsCount] = useState<number>(0);
   const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Simulation Mode State (Khusus Pengujian / Testing)
@@ -315,6 +304,21 @@ export function AttendanceApp() {
   useEffect(() => {
     async function syncRecords() {
       try {
+        const storedRecs = getStoredRecords();
+        setRecords(storedRecs);
+
+        const lock = getStoredDeviceLock();
+        if (lock) {
+          setDeviceLock(lock);
+          const member = findMemberByBarcode(lock.nik);
+          if (member) {
+            setScannedMember((prev) => prev ?? member);
+            setScannedTime((prev) => prev ?? lock.timestamp);
+            setTypedNameCount((prev) => (prev === 0 ? member.nama.length : prev));
+            setRevealedFieldsCount((prev) => (prev === 0 ? 6 : prev));
+          }
+        }
+
         const res = await fetch("/api/attendance", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
@@ -927,8 +931,8 @@ export function AttendanceApp() {
               </div>
             )}
 
-            {/* SIMULATION MODE PANEL (HANYA DITAMPILKAN DI LOCALHOST) */}
-            {isLocalhost && (
+            {/* SIMULATION MODE PANEL (HANYA DITAMPILKAN DI LOCALHOST SETELAH MOUNT) */}
+            {isMounted && isLocalhost && (
               <div className="attendance-simulation-box">
                 <div className="simulation-header-toggle">
                   <div className="sim-title-wrap">
