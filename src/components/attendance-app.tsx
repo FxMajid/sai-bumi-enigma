@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ATTENDANCE_ROSTER,
   ATTENDANCE_TARGET_LOCATION,
   calculateDistanceMeters,
   findMemberByBarcode,
@@ -189,6 +190,12 @@ export function AttendanceApp() {
     () => (initialLockedInfo?.member ? 6 : 0)
   );
   const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Simulation Mode State (Khusus Pengujian / Testing)
+  const [isSimulationOpen, setIsSimulationOpen] = useState(false);
+  const [simulationNik, setSimulationNik] = useState("");
+  const [simulationBypassGps, setSimulationBypassGps] = useState(true);
+  const [simulationBypassDeviceLock, setSimulationBypassDeviceLock] = useState(true);
 
   // Sync attendance records from server on mount
   useEffect(() => {
@@ -387,6 +394,46 @@ export function AttendanceApp() {
       triggerSearchAnimation(member);
     },
     [verifyLocation, triggerSearchAnimation]
+  );
+
+  // Handle Simulation NIK Submission (Khusus Pengujian / Testing)
+  const handleSimulateNikSubmit = useCallback(
+    async (e?: React.FormEvent, explicitNik?: string) => {
+      if (e) e.preventDefault();
+      const targetNik = (explicitNik ?? simulationNik).trim();
+      if (!targetNik) return;
+
+      const member = findMemberByBarcode(targetNik);
+      if (!member) {
+        setScanError(`[SIMULASI] NIK / Nama "${targetNik}" tidak ditemukan dalam daftar peserta resmi.`);
+        return;
+      }
+
+      setScanError(null);
+
+      // Check device lock unless bypassed for simulation
+      if (!simulationBypassDeviceLock) {
+        const currentLock = getStoredDeviceLock();
+        if (currentLock && currentLock.nik !== member.nik) {
+          setScanError(
+            `[SIMULASI] Perangkat ini sudah terkunci untuk agen lain (${currentLock.nama}). Centang "Bypass Kunci 1 Perangkat" untuk menguji agen lain.`
+          );
+          return;
+        }
+      }
+
+      // Check GPS location unless bypassed for simulation
+      if (!simulationBypassGps) {
+        const isLocationValid = await verifyLocation();
+        if (!isLocationValid) {
+          return;
+        }
+      }
+
+      // Trigger radar animation & check-in
+      triggerSearchAnimation(member);
+    },
+    [simulationNik, simulationBypassDeviceLock, simulationBypassGps, verifyLocation, triggerSearchAnimation]
   );
 
   // Automatic Listener for physical USB / Bluetooth Barcode Scanners
@@ -691,6 +738,101 @@ export function AttendanceApp() {
                 <span>{scanError}</span>
               </div>
             )}
+
+            {/* SIMULATION MODE PANEL (KHUSUS PENGUJIAN / TESTING) */}
+            <div className="attendance-simulation-box">
+              <div className="simulation-header-toggle">
+                <div className="sim-title-wrap">
+                  <span className="sim-badge">MODE SIMULASI</span>
+                  <span className="sim-caption">Pengujian Input NIK (Testing)</span>
+                </div>
+                <button
+                  type="button"
+                  className={`btn-toggle-sim ${isSimulationOpen ? "is-open" : ""}`}
+                  onClick={() => setIsSimulationOpen(!isSimulationOpen)}
+                  title="Buka / Tutup panel simulasi input NIK"
+                >
+                  <Icon name="search" size={14} />
+                  <span>{isSimulationOpen ? "Tutup Simulasi" : "Simulasi Input NIK"}</span>
+                </button>
+              </div>
+
+              {isSimulationOpen && (
+                <div className="simulation-body-panel">
+                  <p className="simulation-intro-text">
+                    Gunakan panel ini untuk menguji animasi radar pencarian detektif dan cetak kartu identitas resmi tanpa menggunakan barcode fisik.
+                  </p>
+
+                  <form className="simulation-form" onSubmit={(e) => void handleSimulateNikSubmit(e)}>
+                    <div className="sim-input-row">
+                      <input
+                        type="text"
+                        className="quiz-input sim-text-input"
+                        placeholder="Ketik NIK peserta (contoh: DMAD18021)..."
+                        value={simulationNik}
+                        onChange={(e) => setSimulationNik(e.target.value)}
+                        autoComplete="off"
+                      />
+                      <button
+                        type="submit"
+                        className="button button-gold sim-btn-submit"
+                        disabled={!simulationNik.trim()}
+                      >
+                        <Icon name="check" size={16} />
+                        <span>Simulasi Absen</span>
+                      </button>
+                    </div>
+
+                    {/* Quick selection dropdown from roster */}
+                    <div className="sim-select-row">
+                      <label className="sim-select-lbl" htmlFor="sim-quick-select">
+                        Atau pilih langsung dari peserta resmi:
+                      </label>
+                      <select
+                        id="sim-quick-select"
+                        className="quiz-input sim-select-dropdown"
+                        value={simulationNik}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSimulationNik(val);
+                          if (val) {
+                            void handleSimulateNikSubmit(undefined, val);
+                          }
+                        }}
+                      >
+                        <option value="">-- Pilih Peserta untuk Simulasi --</option>
+                        {ATTENDANCE_ROSTER.map((m) => (
+                          <option key={m.nik} value={m.nik}>
+                            {m.nama} ({m.nik}) — {m.namaKelompok}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Simulation Options (Bypass GPS & Bypass Device Lock) */}
+                    <div className="sim-options-grid">
+                      <label className="sim-checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={simulationBypassGps}
+                          onChange={(e) => setSimulationBypassGps(e.target.checked)}
+                        />
+                        <span>Bypass Lokasi GPS (Khusus Simulasi)</span>
+                      </label>
+
+                      <label className="sim-checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={simulationBypassDeviceLock}
+                          onChange={(e) => setSimulationBypassDeviceLock(e.target.checked)}
+                        />
+                        <span>Bypass Kunci 1 Perangkat (Bisa Coba Peserta Lain)</span>
+                      </label>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* RESULTS VIEWPORT: SEARCHING RADAR ANIMATION OR TYPEWRITER ID CARD */}
@@ -765,6 +907,20 @@ export function AttendanceApp() {
                       <span className="id-card-number">
                         NO. {String(scannedMember.no).padStart(2, "0")} / 35
                       </span>
+                      {isSimulationOpen && (
+                        <button
+                          type="button"
+                          className="btn-sim-reset-card"
+                          onClick={() => {
+                            setScannedMember(null);
+                            setSimulationNik("");
+                          }}
+                          title="Kembali ke mode input / pilih peserta lain untuk simulasi"
+                        >
+                          <Icon name="refresh" size={13} />
+                          <span>Coba Agen Lain (Simulasi)</span>
+                        </button>
+                      )}
                       {!isNameTypingComplete && (
                         <button
                           type="button"

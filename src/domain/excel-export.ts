@@ -29,7 +29,6 @@ function concatUint8Arrays(arrays: Uint8Array[]): Uint8Array {
 }
 
 import { generateCode128Svg } from "./barcode-svg";
-import type { AttendanceMember } from "./attendance";
 
 interface ZipFileEntry {
   name: string;

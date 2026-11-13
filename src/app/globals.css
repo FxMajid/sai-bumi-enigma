@@ -2709,6 +2709,190 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
   margin-bottom: 20px;
 }
 
+/* Attendance Simulation Mode Box */
+.attendance-simulation-box {
+  margin-top: 20px;
+  background: rgba(22, 17, 14, 0.95);
+  border: 1px dashed rgba(199, 155, 89, 0.45);
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+
+.simulation-header-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.sim-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sim-badge {
+  background: rgba(255, 179, 0, 0.16);
+  color: #ffd54f;
+  border: 1px solid rgba(255, 179, 0, 0.4);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sim-caption {
+  font-size: 12px;
+  color: #baa894;
+  font-weight: 500;
+}
+
+.btn-toggle-sim {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #251d18;
+  border: 1px solid #54402e;
+  color: var(--color-gold);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-toggle-sim:hover {
+  background: var(--color-gold);
+  color: #120e0a;
+  border-color: var(--color-gold);
+}
+
+.btn-toggle-sim.is-open {
+  background: rgba(199, 155, 89, 0.18);
+  border-color: var(--color-gold);
+}
+
+.simulation-body-panel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(199, 155, 89, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.simulation-intro-text {
+  font-size: 12px;
+  color: #9e8d7a;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.simulation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sim-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.sim-text-input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-family: monospace;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  background: #140f0c;
+  border: 1px solid #4a3828;
+}
+
+.sim-btn-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sim-select-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sim-select-lbl {
+  font-size: 11px;
+  color: #baa894;
+  font-weight: 500;
+}
+
+.sim-select-dropdown {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 12px;
+  background: #140f0c;
+  border: 1px solid #4a3828;
+  color: #f7eedf;
+  cursor: pointer;
+}
+
+.sim-options-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(18, 14, 11, 0.8);
+  padding: 10px 12px;
+  border-radius: 4px;
+  border: 1px solid #36281d;
+}
+
+.sim-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #cfbfad;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sim-checkbox-label input[type="checkbox"] {
+  accent-color: var(--color-gold);
+  cursor: pointer;
+}
+
+.btn-sim-reset-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 179, 0, 0.12);
+  border: 1px solid rgba(255, 179, 0, 0.4);
+  color: #ffd54f;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-sim-reset-card:hover {
+  background: #ffd54f;
+  color: #120e0a;
+}
+
 .barcode-input-mono {
   font-family: monospace;
   font-weight: bold;
