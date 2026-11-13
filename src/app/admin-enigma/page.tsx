@@ -15,6 +15,17 @@ import { Icon } from "@/components/icon";
 
 const DEVICE_LOCK_KEY = "sai_bumi_enigma_device_attendance_lock";
 
+function getAdminHeaders(): HeadersInit {
+  const token =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("admin_enigma_token") || "P@ssw0rd#adminEnigma2026"
+      : "P@ssw0rd#adminEnigma2026";
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
+}
+
 export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [passwordInput, setPasswordInput] = useState("");
@@ -48,7 +59,10 @@ export default function AdminPage() {
   useEffect(() => {
     async function checkAuth() {
       try {
-        const res = await fetch("/api/admin/results");
+        const res = await fetch("/api/admin/results", {
+          headers: getAdminHeaders(),
+          credentials: "include",
+        });
         if (res.ok) {
           const data = await res.json();
           setSubmissions(data.submissions || []);
@@ -71,7 +85,10 @@ export default function AdminPage() {
   async function refreshData() {
     setLoadingData(true);
     try {
-      const res = await fetch("/api/admin/results");
+      const res = await fetch("/api/admin/results", {
+        headers: getAdminHeaders(),
+        credentials: "include",
+      });
       if (res.ok) {
         const data = await res.json();
         setSubmissions(data.submissions || []);
@@ -89,7 +106,10 @@ export default function AdminPage() {
   // Fetch Attendance Records
   async function fetchAttendance() {
     try {
-      const res = await fetch("/api/admin/attendance");
+      const res = await fetch("/api/admin/attendance", {
+        headers: getAdminHeaders(),
+        credentials: "include",
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.records) {
@@ -108,7 +128,8 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/admin/quiz-status", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAdminHeaders(),
+        credentials: "include",
         body: JSON.stringify({ isOpen: nextStatus }),
       });
       if (res.ok) {
@@ -133,7 +154,8 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/admin/results", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: getAdminHeaders(),
+        credentials: "include",
         body: JSON.stringify({ id }),
       });
       if (res.ok) {
@@ -159,7 +181,8 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/admin/results", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: getAdminHeaders(),
+        credentials: "include",
         body: JSON.stringify({ all: true }),
       });
       if (res.ok) {
@@ -187,21 +210,24 @@ export default function AdminPage() {
 
   // Delete attendance of a specific participant
   async function handleDeleteSingleAttendance(nik: string, name: string) {
-    if (!confirm(`Hapus status kehadiran untuk ${name} (${nik})? Peserta ini dapat melakukan absensi kembali.`)) {
+    if (!confirm(`Hapus status kehadiran untuk ${name} (${nik})? Kunci perangkat peserta ini akan otomatis ter-reset sehingga dia dapat melakukan absensi ulang.`)) {
       return;
     }
 
     try {
       const res = await fetch("/api/admin/attendance", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: getAdminHeaders(),
+        credentials: "include",
         body: JSON.stringify({ nik }),
       });
       if (res.ok) {
         const data = await res.json();
         setAttendanceRecords(data.records || {});
-        setAttendanceNotice(`Data absensi untuk ${name} (${nik}) berhasil dihapus.`);
-        setTimeout(() => setAttendanceNotice(null), 5000);
+        setAttendanceNotice(
+          `Kehadiran ${name} (${nik}) berhasil dihapus. Kunci perangkat peserta telah dibuka kembali (unlocked) sehingga dia dapat melakukan absensi ulang.`
+        );
+        setTimeout(() => setAttendanceNotice(null), 7000);
       } else {
         alert("Gagal menghapus status absensi.");
       }
@@ -214,7 +240,7 @@ export default function AdminPage() {
   async function handleResetAllAttendance() {
     if (
       !confirm(
-        "PERINGATAN: Apakah Anda yakin ingin mengosongkan / menghapus SELURUH data kehadiran 35 peserta? Tindakan ini tidak dapat dibatalkan."
+        "PERINGATAN: Apakah Anda yakin ingin mengosongkan / menghapus SELURUH data kehadiran 35 peserta? Kunci semua perangkat peserta akan otomatis di-reset sehingga semua peserta dapat melakukan absensi ulang."
       )
     ) {
       return;
@@ -223,13 +249,16 @@ export default function AdminPage() {
     try {
       const res = await fetch("/api/admin/attendance", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: getAdminHeaders(),
+        credentials: "include",
         body: JSON.stringify({ all: true }),
       });
       if (res.ok) {
         setAttendanceRecords({});
-        setAttendanceNotice("Seluruh data absensi peserta berhasil dikosongkan.");
-        setTimeout(() => setAttendanceNotice(null), 5000);
+        setAttendanceNotice(
+          "Seluruh data absensi peserta berhasil dikosongkan. Kunci di semua perangkat peserta otomatis ter-reset sehingga semua peserta dapat melakukan absensi ulang."
+        );
+        setTimeout(() => setAttendanceNotice(null), 7000);
       } else {
         alert("Gagal mengosongkan data absensi.");
       }
@@ -248,10 +277,15 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: passwordInput }),
+        credentials: "include",
+        body: JSON.stringify({ password: passwordInput.trim() }),
       });
 
       if (res.ok) {
+        const data = await res.json();
+        if (typeof window !== "undefined" && data.token) {
+          sessionStorage.setItem("admin_enigma_token", data.token);
+        }
         setIsAuthenticated(true);
         void refreshData();
         void fetchAttendance();
@@ -269,6 +303,9 @@ export default function AdminPage() {
   // Handle Logout
   function handleLogout() {
     document.cookie = "admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("admin_enigma_token");
+    }
     setIsAuthenticated(false);
     setPasswordInput("");
   }

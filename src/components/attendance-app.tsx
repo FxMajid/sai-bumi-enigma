@@ -311,19 +311,29 @@ export function AttendanceApp() {
   const [simulationBypassGps, setSimulationBypassGps] = useState(true);
   const [simulationBypassDeviceLock, setSimulationBypassDeviceLock] = useState(true);
 
-  // Sync attendance records from server on mount
+  // Sync attendance records from server continuously
   useEffect(() => {
     async function syncRecords() {
       try {
-        const res = await fetch("/api/attendance");
+        const res = await fetch("/api/attendance", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
           if (data.records && typeof data.records === "object") {
-            setRecords((prev) => {
-              const merged = { ...prev, ...data.records };
-              saveStoredRecords(merged);
-              return merged;
-            });
+            const serverRecords: Record<string, string> = data.records;
+            setRecords(serverRecords);
+            saveStoredRecords(serverRecords);
+
+            // Silent Auto-Unlock: If current device was locked to a participant whose attendance
+            // was deleted or reset by admin in /admin-enigma, automatically unlock this device!
+            const currentLock = getStoredDeviceLock();
+            if (currentLock && !serverRecords[currentLock.nik]) {
+              localStorage.removeItem(DEVICE_LOCK_KEY);
+              setDeviceLock(null);
+              setScannedMember(null);
+              setScannedTime(null);
+              setTypedNameCount(0);
+              setRevealedFieldsCount(0);
+            }
           }
         }
       } catch {
@@ -331,6 +341,8 @@ export function AttendanceApp() {
       }
     }
     void syncRecords();
+    const interval = setInterval(syncRecords, 3500);
+    return () => clearInterval(interval);
   }, []);
 
 
@@ -421,7 +433,17 @@ export function AttendanceApp() {
       setScanError(null);
 
       // 1. Silent Device Lock Check: 1 Device = 1 User
-      const currentLock = getStoredDeviceLock();
+      let currentLock = getStoredDeviceLock();
+      if (currentLock) {
+        // Double check against current records: if the lock is no longer in attendance records, it was reset by admin!
+        const latestRecords = getStoredRecords();
+        if (!latestRecords[currentLock.nik]) {
+          localStorage.removeItem(DEVICE_LOCK_KEY);
+          currentLock = null;
+          setDeviceLock(null);
+        }
+      }
+
       if (currentLock && currentLock.nik !== member.nik) {
         setScanError(
           `Perangkat ini sudah digunakan untuk absensi agen lain (${currentLock.nama}). Sesuai ketentuan, 1 device hanya dapat digunakan untuk absensi 1 orang.`
@@ -574,6 +596,45 @@ export function AttendanceApp() {
     setRevealedFieldsCount(6);
   };
 
+  // File upload scanner ref & handler
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleScanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setScanError(null);
+      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+      const tempScanner = new Html5Qrcode("attendance-file-reader-dummy", {
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.QR_CODE,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+        ],
+        verbose: false,
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true,
+        },
+      });
+
+      const decoded = await tempScanner.scanFile(file, true);
+      tempScanner.clear();
+      if (decoded) {
+        void handleProcessBarcode(decoded);
+      } else {
+        setScanError("Barcode tidak dapat terbaca dari foto. Pastikan barcode terlihat jelas, fokus, dan tidak terpotong.");
+      }
+    } catch {
+      setScanError("Gagal membaca barcode dari gambar. Pastikan gambar memuat barcode dengan jelas.");
+    } finally {
+      if (e.target) e.target.value = "";
+    }
+  };
+
   // Camera barcode scanner using html5-qrcode (ZXing engine: Code 128, QR Code, Code 39, EAN 13)
   useEffect(() => {
     if (!isCameraActive) {
@@ -600,11 +661,21 @@ export function AttendanceApp() {
 
     async function startScanner() {
       try {
-        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+        if (typeof window !== "undefined" && window.location.protocol === "http:" && !isLocalhost) {
+          setScanError("Akses kamera membutuhkan protokol HTTPS yang aman. Silakan buka situs melalui tautan https://.");
+          setIsCameraActive(false);
+          return;
+        }
+
+        // Wait a short delay so the container element is rendered with dimensions
+        await new Promise((r) => setTimeout(r, 150));
         if (!active) return;
 
         const readerElem = document.getElementById("attendance-camera-reader");
         if (!readerElem) return;
+
+        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+        if (!active) return;
 
         if (html5QrCodeRef.current) {
           try {
@@ -628,39 +699,67 @@ export function AttendanceApp() {
             Html5QrcodeSupportedFormats.UPC_E,
           ],
           verbose: false,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
         });
 
         html5QrCodeRef.current = scanner;
 
-        await scanner.start(
-          { facingMode: "environment" },
-          {
-            fps: 15,
-            qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-              const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-              const boxWidth = Math.floor(viewfinderWidth * 0.88);
-              const boxHeight = Math.floor(Math.min(minEdge * 0.72, 240));
-              return { width: boxWidth, height: boxHeight };
-            },
-            aspectRatio: 1.333334,
+        const scanSuccessCallback = (decodedText: string) => {
+          if (isProcessingScanRef.current) return;
+          isProcessingScanRef.current = true;
+          void handleProcessBarcode(decodedText).finally(() => {
+            setTimeout(() => {
+              isProcessingScanRef.current = false;
+            }, 1500);
+          });
+        };
+
+        const scanConfig = {
+          fps: 20,
+          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+            // Wider horizontal box for 1D Barcodes (Code 128)
+            const boxWidth = Math.floor(Math.min(viewfinderWidth * 0.94, 520));
+            const boxHeight = Math.floor(Math.min(viewfinderHeight * 0.75, 260));
+            return {
+              width: Math.max(boxWidth, 240),
+              height: Math.max(boxHeight, 140),
+            };
           },
-          (decodedText: string) => {
-            if (isProcessingScanRef.current) return;
-            isProcessingScanRef.current = true;
-            void handleProcessBarcode(decodedText).finally(() => {
-              setTimeout(() => {
-                isProcessingScanRef.current = false;
-              }, 1500);
-            });
-          },
-          () => {
-            // Frame error - ignore
+          aspectRatio: 1.333334,
+        };
+
+        // Enumerate cameras to pick back camera or fallback gracefully
+        const cameras = await Html5Qrcode.getCameras().catch(() => []);
+        let cameraChoice: string | MediaTrackConstraints = {
+          facingMode: { ideal: "environment" },
+        };
+
+        if (cameras && cameras.length > 0) {
+          const backCam = cameras.find((c) =>
+            /back|rear|environment|belakang|main/i.test(c.label)
+          );
+          const lastCam = cameras[cameras.length - 1];
+          if (backCam) {
+            cameraChoice = backCam.id;
+          } else if (lastCam) {
+            cameraChoice = lastCam.id;
           }
-        );
+        }
+
+        try {
+          await scanner.start(cameraChoice, scanConfig, scanSuccessCallback, () => {});
+        } catch {
+          // Fallback to default/user facing camera if ideal environment / deviceId failed
+          if (active) {
+            await scanner.start({ facingMode: "user" }, scanConfig, scanSuccessCallback, () => {});
+          }
+        }
       } catch (err: unknown) {
         if (!active) return;
         const msg = err instanceof Error ? err.message : String(err);
-        setScanError(`Gagal membuka kamera: ${msg}. Pastikan izin kamera aktif di browser Anda.`);
+        setScanError(`Gagal membuka kamera: ${msg}. Pastikan izin kamera aktif di browser Anda atau gunakan tombol "Ambil / Unggah Foto Barcode".`);
         setIsCameraActive(false);
       }
     }
@@ -686,7 +785,7 @@ export function AttendanceApp() {
         }
       }
     };
-  }, [isCameraActive, handleProcessBarcode]);
+  }, [isCameraActive, isLocalhost, handleProcessBarcode]);
 
   const isNameTypingComplete = Boolean(
     scannedMember && typedNameCount >= scannedMember.nama.length
@@ -872,18 +971,42 @@ export function AttendanceApp() {
                 </div>
               )}
 
-              <button
-                type="button"
-                className={`btn-camera-toggle ${
-                  isCameraActive ? "btn-camera-stop" : "btn-camera-start"
-                }`}
-                onClick={() => setIsCameraActive((prev) => !prev)}
-              >
-                <Icon name="refresh" size={16} />
-                <span>
-                  {isCameraActive ? "Matikan Kamera Pemindai" : "Buka Kamera Pemindai Barcode"}
-                </span>
-              </button>
+              <div className="camera-action-buttons">
+                <button
+                  type="button"
+                  className={`btn-camera-toggle ${
+                    isCameraActive ? "btn-camera-stop" : "btn-camera-start"
+                  }`}
+                  onClick={() => setIsCameraActive((prev) => !prev)}
+                >
+                  <Icon name="refresh" size={16} />
+                  <span>
+                    {isCameraActive ? "Matikan Kamera Pemindai" : "Buka Kamera Pemindai Barcode"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-upload-barcode"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Ambil foto barcode atau pilih file gambar barcode dari perangkat"
+                >
+                  <Icon name="search" size={15} />
+                  <span>Ambil / Unggah Foto Barcode</span>
+                </button>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: "none" }}
+                  onChange={(e) => void handleScanFile(e)}
+                />
+              </div>
+
+              {/* Hidden dummy container for photo barcode scanner */}
+              <div id="attendance-file-reader-dummy" style={{ display: "none" }} />
             </div>
 
             {/* ERROR NOTICE */}
