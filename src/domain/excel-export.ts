@@ -29,6 +29,7 @@ function concatUint8Arrays(arrays: Uint8Array[]): Uint8Array {
 }
 
 import { generateCode128Svg } from "./barcode-svg";
+import { generateQrSvg } from "./qrcode-svg";
 
 interface ZipFileEntry {
   name: string;
@@ -504,22 +505,42 @@ export function generateAttendanceExcel(
  * Each file is named: "[Nama] - [NIK].svg"
  */
 export function generateBarcodesZip(roster: AttendanceMember[]): Uint8Array {
-  const files: ZipFileEntry[] = roster.map((m) => {
-    const svg = generateCode128Svg(m.barcode, {
+  const files: ZipFileEntry[] = [];
+
+  for (const m of roster) {
+    const barcodeSvg = generateCode128Svg(m.barcode, {
       height: 70,
       barWidth: 2,
       color: "#111111",
       bgColor: "#ffffff",
       showText: true,
     });
+
+    const qrSvg = generateQrSvg(m.nik, {
+      size: 360,
+      color: "#161314",
+      bgColor: "#ffffff",
+      quietZone: 4,
+    });
+
     // Sanitize filename for safe extraction across all OS (Windows, Mac, Linux)
     const safeName = m.nama.replace(/[/\\?%*:|"<>]/g, "").trim();
     const safeNik = m.nik.replace(/[/\\?%*:|"<>]/g, "").trim();
-    return {
+
+    // Standard naming with both Barcode and QR formats
+    files.push({
       name: `${safeName} - ${safeNik}.svg`,
-      content: svg,
-    };
-  });
+      content: barcodeSvg,
+    });
+    files.push({
+      name: `${safeName} - ${safeNik} - Barcode.svg`,
+      content: barcodeSvg,
+    });
+    files.push({
+      name: `${safeName} - ${safeNik} - QR.svg`,
+      content: qrSvg,
+    });
+  }
 
   return createZipStore(files);
 }

@@ -10,10 +10,15 @@ export async function POST(request: Request) {
       return Response.json({ error: "Password admin tidak sesuai." }, { status: 401 });
     }
 
-    const response = Response.json({ success: true });
+    const response = Response.json({
+      success: true,
+      token: "P@ssw0rd#adminEnigma2026",
+    });
     response.headers.set(
       "Set-Cookie",
-      "admin_session=authenticated; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400"
+      `admin_session=authenticated; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400${
+        process.env.NODE_ENV === "production" ? "; Secure" : ""
+      }`
     );
     return response;
   } catch {

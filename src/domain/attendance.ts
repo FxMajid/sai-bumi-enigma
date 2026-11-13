@@ -552,16 +552,27 @@ export const ATTENDANCE_ROSTER: AttendanceMember[] = [
 export function findMemberByBarcode(query: string): AttendanceMember | null {
   if (!query) return null;
   const clean = query.trim().toUpperCase();
-  // Exact match on NIK or Barcode
+
+  // 1. Exact match on NIK or Barcode
   const found = ATTENDANCE_ROSTER.find(
     (m) => m.nik.toUpperCase() === clean || m.barcode.toUpperCase() === clean
   );
   if (found) return found;
 
-  // Search by name if query matches
-  const byName = ATTENDANCE_ROSTER.find((m) =>
-    m.nama.toUpperCase().includes(clean)
+  // 2. Substring match for NIK or Barcode (e.g. if scanned with prefixes, whitespace, or as URL parameter)
+  const bySubstring = ATTENDANCE_ROSTER.find(
+    (m) => clean.includes(m.nik.toUpperCase()) || clean.includes(m.barcode.toUpperCase())
   );
-  return byName || null;
+  if (bySubstring) return bySubstring;
+
+  // 3. Search by name if query matches
+  if (clean.length >= 3) {
+    const byName = ATTENDANCE_ROSTER.find((m) =>
+      m.nama.toUpperCase().includes(clean)
+    );
+    if (byName) return byName;
+  }
+
+  return null;
 }
 

@@ -2566,36 +2566,42 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
   margin-bottom: 22px;
 }
 
-/* Html5Qrcode Scanner Container */
-.scanner-camera-container.is-hidden {
+.scanner-camera-frame.is-hidden {
   display: none !important;
 }
 
-.scanner-camera-container.is-active {
+.scanner-camera-frame.is-active {
   display: block !important;
   width: 100%;
-  min-height: 260px;
-  background: #000;
+  position: relative;
+  overflow: hidden;
   border: 2px solid var(--color-gold);
   border-radius: 4px;
-  overflow: hidden;
+  background: #000;
   margin-bottom: 12px;
-  position: relative;
+}
+
+.scanner-camera-container {
+  width: 100%;
+  height: auto;
 }
 
 #attendance-camera-reader {
   width: 100% !important;
-  background: #0a0807 !important;
+  height: auto !important;
+  background: #000 !important;
   border-radius: 4px;
   overflow: hidden;
+  position: relative;
+  display: block !important;
 }
 
 #attendance-camera-reader video {
   width: 100% !important;
   height: auto !important;
-  max-height: 380px !important;
-  object-fit: cover !important;
-  border-radius: 4px;
+  max-height: 480px;
+  display: block !important;
+  margin: 0 auto;
 }
 
 #attendance-camera-reader canvas {
@@ -2607,7 +2613,39 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
 }
 
 #attendance-camera-reader__scan_region {
-  min-height: 220px;
+  min-height: auto !important;
+  height: auto !important;
+}
+
+#official-detective-id-card {
+  scroll-margin-top: 24px;
+}
+
+.scanner-laser-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-gold);
+  box-shadow: 0 0 10px 2px var(--color-gold);
+  animation: scanLaser 2.2s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: 5;
+}
+
+@keyframes scanLaser {
+  0% {
+    top: 8%;
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    top: 92%;
+    opacity: 0.3;
+  }
 }
 
 #attendance-camera-reader__dashboard {
@@ -4901,9 +4939,14 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
 
 .catalog-qr-svg {
   background: #fff;
-  padding: 4px;
-  border-radius: 3px;
+  padding: 6px;
+  border-radius: 4px;
   display: inline-block;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.catalog-qr-svg svg {
+  display: block;
 }
 
 .catalog-barcode-mono {

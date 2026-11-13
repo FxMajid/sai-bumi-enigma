@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Html5Qrcode } from "html5-qrcode";
 import {
   ATTENDANCE_ROSTER,
@@ -136,24 +136,35 @@ function playRadarSweepSound() {
   }
 }
 
+const emptySubscribe = () => () => {};
+
 export function AttendanceApp() {
+  // Hydration-safe client mount status via React 19 standard useSyncExternalStore
+  const isMounted = useSyncExternalStore(emptySubscribe, () => true, () => false);
+
+  // Localhost environment check (Hanya izinkan mode simulasi di localhost, hydration-safe)
+  const isLocalhost = useSyncExternalStore(
+    emptySubscribe,
+    () => {
+      if (typeof window === "undefined") return false;
+      const host = window.location.hostname;
+      return (
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host.endsWith(".local") ||
+        host.startsWith("192.168.") ||
+        host.startsWith("10.") ||
+        host === "0.0.0.0"
+      );
+    },
+    () => false
+  );
+
   // Attendance Records: NIK -> ISO timestamp
-  const [, setRecords] = useState<Record<string, string>>(getStoredRecords);
+  const [, setRecords] = useState<Record<string, string>>({});
 
   // Device Lock State (Silent 1 device = 1 user)
-  const [deviceLock, setDeviceLock] = useState<DeviceLock | null>(getStoredDeviceLock);
-
-  // Lazy initializer if device already locked
-  const [initialLockedInfo] = useState(() => {
-    const lock = getStoredDeviceLock();
-    if (lock) {
-      const member = findMemberByBarcode(lock.nik);
-      if (member) {
-        return { member, time: lock.timestamp };
-      }
-    }
-    return null;
-  });
+  const [deviceLock, setDeviceLock] = useState<DeviceLock | null>(null);
 
   // Scanner state
   const [scanError, setScanError] = useState<string | null>(null);
@@ -161,20 +172,6 @@ export function AttendanceApp() {
   // Html5Qrcode Scanner instance ref & in-flight guard
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const isProcessingScanRef = useRef(false);
-
-  // Localhost environment check (Hanya izinkan mode simulasi di localhost)
-  const [isLocalhost] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const host = window.location.hostname;
-    return (
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host.endsWith(".local") ||
-      host.startsWith("192.168.") ||
-      host.startsWith("10.") ||
-      host === "0.0.0.0"
-    );
-  });
 
   // Geolocation state (PT. Tunas Dwipa Matra - TDM)
   const [userLocation, setUserLocation] = useState<{
@@ -291,18 +288,10 @@ export function AttendanceApp() {
   const [searchPhaseText, setSearchPhaseText] = useState("");
 
   // Active scanned member & Typewriter animation state on Detective ID Card
-  const [scannedMember, setScannedMember] = useState<AttendanceMember | null>(
-    () => initialLockedInfo?.member ?? null
-  );
-  const [scannedTime, setScannedTime] = useState<string | null>(
-    () => initialLockedInfo?.time ?? null
-  );
-  const [typedNameCount, setTypedNameCount] = useState<number>(
-    () => initialLockedInfo?.member?.nama.length ?? 0
-  );
-  const [revealedFieldsCount, setRevealedFieldsCount] = useState<number>(
-    () => (initialLockedInfo?.member ? 6 : 0)
-  );
+  const [scannedMember, setScannedMember] = useState<AttendanceMember | null>(null);
+  const [scannedTime, setScannedTime] = useState<string | null>(null);
+  const [typedNameCount, setTypedNameCount] = useState<number>(0);
+  const [revealedFieldsCount, setRevealedFieldsCount] = useState<number>(0);
   const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Simulation Mode State (Khusus Pengujian / Testing)
@@ -311,26 +300,68 @@ export function AttendanceApp() {
   const [simulationBypassGps, setSimulationBypassGps] = useState(true);
   const [simulationBypassDeviceLock, setSimulationBypassDeviceLock] = useState(true);
 
-  // Sync attendance records from server on mount
+  // Sync attendance records from server continuously
   useEffect(() => {
     async function syncRecords() {
       try {
-        const res = await fetch("/api/attendance");
+        const storedRecs = getStoredRecords();
+        setRecords(storedRecs);
+
+        const lock = getStoredDeviceLock();
+        if (lock) {
+          setDeviceLock(lock);
+          const member = findMemberByBarcode(lock.nik);
+          if (member) {
+            setScannedMember((prev) => prev ?? member);
+            setScannedTime((prev) => prev ?? lock.timestamp);
+            setTypedNameCount((prev) => (prev === 0 ? member.nama.length : prev));
+            setRevealedFieldsCount((prev) => (prev === 0 ? 6 : prev));
+          }
+        }
+
+        const res = await fetch("/api/attendance", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
           if (data.records && typeof data.records === "object") {
-            setRecords((prev) => {
-              const merged = { ...prev, ...data.records };
-              saveStoredRecords(merged);
-              return merged;
-            });
+            const serverRecords: Record<string, string> = data.records;
+            setRecords(serverRecords);
+            saveStoredRecords(serverRecords);
+
+            // Silent Auto-Unlock: If current device was locked to a participant whose attendance
+            // was deleted or reset by admin in /admin-enigma, automatically unlock this device!
+            const currentLock = getStoredDeviceLock();
+            if (currentLock && !serverRecords[currentLock.nik]) {
+              localStorage.removeItem(DEVICE_LOCK_KEY);
+              localStorage.removeItem(ATTENDANCE_STORAGE_KEY);
+              setDeviceLock(null);
+              setScannedMember(null);
+              setScannedTime(null);
+              setTypedNameCount(0);
+              setRevealedFieldsCount(0);
+            }
           }
         }
       } catch {
         // use local
       }
     }
+
     void syncRecords();
+
+    // Re-sync on tab focus or visibility change without continuous loop spamming
+    const handleFocusOrVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void syncRecords();
+      }
+    };
+
+    window.addEventListener("focus", handleFocusOrVisible);
+    window.addEventListener("visibilitychange", handleFocusOrVisible);
+
+    return () => {
+      window.removeEventListener("focus", handleFocusOrVisible);
+      window.removeEventListener("visibilitychange", handleFocusOrVisible);
+    };
   }, []);
 
 
@@ -421,7 +452,17 @@ export function AttendanceApp() {
       setScanError(null);
 
       // 1. Silent Device Lock Check: 1 Device = 1 User
-      const currentLock = getStoredDeviceLock();
+      let currentLock = getStoredDeviceLock();
+      if (currentLock) {
+        // Double check against current records: if the lock is no longer in attendance records, it was reset by admin!
+        const latestRecords = getStoredRecords();
+        if (!latestRecords[currentLock.nik]) {
+          localStorage.removeItem(DEVICE_LOCK_KEY);
+          currentLock = null;
+          setDeviceLock(null);
+        }
+      }
+
       if (currentLock && currentLock.nik !== member.nik) {
         setScanError(
           `Perangkat ini sudah digunakan untuk absensi agen lain (${currentLock.nama}). Sesuai ketentuan, 1 device hanya dapat digunakan untuk absensi 1 orang.`
@@ -440,6 +481,19 @@ export function AttendanceApp() {
             } (Maksimal ${ATTENDANCE_TARGET_LOCATION.maxRadiusMeters}m).`
         );
         return;
+      }
+
+      // Otomatis matikan kamera setelah pemindaian berhasil diverifikasi
+      setIsCameraActive(false);
+
+      // Arahkan pandangan secara mulus ke radar pencarian & kartu identitas
+      if (typeof window !== "undefined") {
+        setTimeout(() => {
+          const resultElem = document.querySelector(".scanner-result-area");
+          if (resultElem) {
+            resultElem.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }, 50);
       }
 
       // 3. Trigger magnifying glass radar search animation
@@ -494,6 +548,18 @@ export function AttendanceApp() {
         return;
       }
 
+      // Otomatis matikan kamera jika sedang aktif
+      setIsCameraActive(false);
+
+      if (typeof window !== "undefined") {
+        setTimeout(() => {
+          const resultElem = document.querySelector(".scanner-result-area");
+          if (resultElem) {
+            resultElem.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        }, 50);
+      }
+
       // Trigger radar animation & check-in
       triggerSearchAnimation(member);
     },
@@ -507,6 +573,41 @@ export function AttendanceApp() {
       triggerSearchAnimation,
     ]
   );
+
+  // Reset all attendance data & device session lock (Simulasi / Pengujian)
+  const handleResetAllAttendanceAndLock = useCallback(async () => {
+    if (
+      !confirm(
+        "Apakah Anda yakin ingin MENGHAPUS SEMUA DATA ABSENSI dan MERESET KUNCI PERANGKAT ini? Tindakan ini akan mengosongkan seluruh riwayat kehadiran."
+      )
+    ) {
+      return;
+    }
+
+    localStorage.removeItem(DEVICE_LOCK_KEY);
+    localStorage.removeItem(ATTENDANCE_STORAGE_KEY);
+    setDeviceLock(null);
+    setRecords({});
+    setScannedMember(null);
+    setScannedTime(null);
+    setTypedNameCount(0);
+    setRevealedFieldsCount(0);
+    setScanError(null);
+
+    try {
+      await fetch("/api/attendance", { method: "DELETE" });
+      await fetch("/api/admin/attendance", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer P@ssw0rd#adminEnigma2026",
+        },
+        body: JSON.stringify({ all: true }),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Automatic Listener for physical USB / Bluetooth Barcode Scanners
   useEffect(() => {
@@ -574,6 +675,19 @@ export function AttendanceApp() {
     setRevealedFieldsCount(6);
   };
 
+  // Scroll otomatis ke Kartu Identitas Agen Resmi setelah radar pencarian selesai
+  useEffect(() => {
+    if (scannedMember && !isSearchingAgent) {
+      const timer = setTimeout(() => {
+        const cardElem = document.getElementById("official-detective-id-card");
+        if (cardElem) {
+          cardElem.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [scannedMember, isSearchingAgent]);
+
   // Camera barcode scanner using html5-qrcode (ZXing engine: Code 128, QR Code, Code 39, EAN 13)
   useEffect(() => {
     if (!isCameraActive) {
@@ -583,7 +697,13 @@ export function AttendanceApp() {
         if (scanner.isScanning) {
           scanner
             .stop()
-            .then(() => scanner.clear())
+            .then(() => {
+              try {
+                scanner.clear();
+              } catch {
+                // ignore
+              }
+            })
             .catch(() => {});
         } else {
           try {
@@ -600,11 +720,21 @@ export function AttendanceApp() {
 
     async function startScanner() {
       try {
-        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+        if (typeof window !== "undefined" && window.location.protocol === "http:" && !isLocalhost) {
+          setScanError("Akses kamera membutuhkan protokol HTTPS yang aman. Silakan buka situs melalui tautan https://.");
+          setIsCameraActive(false);
+          return;
+        }
+
+        // Wait a short delay so the container element is rendered with dimensions
+        await new Promise((r) => setTimeout(r, 150));
         if (!active) return;
 
         const readerElem = document.getElementById("attendance-camera-reader");
         if (!readerElem) return;
+
+        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+        if (!active) return;
 
         if (html5QrCodeRef.current) {
           try {
@@ -619,44 +749,63 @@ export function AttendanceApp() {
         }
 
         const scanner = new Html5Qrcode("attendance-camera-reader", {
+          verbose: false,
           formatsToSupport: [
-            Html5QrcodeSupportedFormats.CODE_128,
             Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
             Html5QrcodeSupportedFormats.CODE_39,
             Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
           ],
-          verbose: false,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
         });
 
         html5QrCodeRef.current = scanner;
 
-        await scanner.start(
-          { facingMode: "environment" },
-          {
-            fps: 15,
-            qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-              const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-              const boxWidth = Math.floor(viewfinderWidth * 0.88);
-              const boxHeight = Math.floor(Math.min(minEdge * 0.72, 240));
-              return { width: boxWidth, height: boxHeight };
-            },
-            aspectRatio: 1.333334,
-          },
-          (decodedText: string) => {
-            if (isProcessingScanRef.current) return;
-            isProcessingScanRef.current = true;
-            void handleProcessBarcode(decodedText).finally(() => {
-              setTimeout(() => {
-                isProcessingScanRef.current = false;
-              }, 1500);
-            });
-          },
-          () => {
-            // Frame error - ignore
+        const scanSuccessCallback = (decodedText: string) => {
+          if (isProcessingScanRef.current) return;
+          isProcessingScanRef.current = true;
+          void handleProcessBarcode(decodedText).finally(() => {
+            setTimeout(() => {
+              isProcessingScanRef.current = false;
+            }, 1500);
+          });
+        };
+
+        const scanConfig = {
+          fps: 20,
+        };
+
+        try {
+          await scanner.start(
+            { facingMode: "environment" },
+            scanConfig,
+            scanSuccessCallback,
+            () => {}
+          );
+        } catch {
+          // Fallback to user-facing camera if environment/rear camera is not available
+          if (active) {
+            await scanner.start(
+              { facingMode: "user" },
+              scanConfig,
+              scanSuccessCallback,
+              () => {}
+            );
           }
-        );
+        }
+
+        if (!active) {
+          try {
+            if (scanner.isScanning) {
+              await scanner.stop();
+            }
+            scanner.clear();
+          } catch {
+            // ignore
+          }
+        }
       } catch (err: unknown) {
         if (!active) return;
         const msg = err instanceof Error ? err.message : String(err);
@@ -675,7 +824,13 @@ export function AttendanceApp() {
         if (scanner.isScanning) {
           scanner
             .stop()
-            .then(() => scanner.clear())
+            .then(() => {
+              try {
+                scanner.clear();
+              } catch {
+                // ignore
+              }
+            })
             .catch(() => {});
         } else {
           try {
@@ -686,7 +841,7 @@ export function AttendanceApp() {
         }
       }
     };
-  }, [isCameraActive, handleProcessBarcode]);
+  }, [isCameraActive, isLocalhost, handleProcessBarcode]);
 
   const isNameTypingComplete = Boolean(
     scannedMember && typedNameCount >= scannedMember.nama.length
@@ -854,20 +1009,22 @@ export function AttendanceApp() {
 
             {/* CAMERA TOGGLE & PREVIEW */}
             <div className="camera-viewport-wrap">
-              <div
-                id="attendance-camera-reader"
-                className={`scanner-camera-container ${isCameraActive ? "is-active" : "is-hidden"}`}
-              />
+              <div className={`scanner-camera-frame ${isCameraActive ? "is-active" : "is-hidden"}`}>
+                <div
+                  id="attendance-camera-reader"
+                  className="scanner-camera-container"
+                />
+                {isCameraActive && <div className="scanner-laser-line" />}
+              </div>
 
               {!isCameraActive && (
                 <div className="camera-idle-box">
                   <span className="camera-idle-icon">
                     <Icon name="search" size={40} />
                   </span>
-                  <strong>Kamera Pemindai Barcode</strong>
+                  <strong>Kamera Pemindai Barcode & QR Code</strong>
                   <p>
-                    Gunakan kamera perangkat atau scanner barcode fisik untuk membaca barcode tanda
-                    pengenal peserta.
+                    Arahkan kamera ke barcode fisik atau QR code tanda pengenal peserta untuk absensi resmi.
                   </p>
                 </div>
               )}
@@ -881,7 +1038,7 @@ export function AttendanceApp() {
               >
                 <Icon name="refresh" size={16} />
                 <span>
-                  {isCameraActive ? "Matikan Kamera Pemindai" : "Buka Kamera Pemindai Barcode"}
+                  {isCameraActive ? "Matikan Kamera Pemindai" : "Buka Kamera Pemindai Barcode / QR Code"}
                 </span>
               </button>
             </div>
@@ -894,8 +1051,8 @@ export function AttendanceApp() {
               </div>
             )}
 
-            {/* SIMULATION MODE PANEL (HANYA DITAMPILKAN DI LOCALHOST) */}
-            {isLocalhost && (
+            {/* SIMULATION MODE PANEL (HANYA DITAMPILKAN DI LOCALHOST SETELAH MOUNT) */}
+            {isMounted && isLocalhost && (
               <div className="attendance-simulation-box">
                 <div className="simulation-header-toggle">
                   <div className="sim-title-wrap">
@@ -985,6 +1142,20 @@ export function AttendanceApp() {
                           <span>Bypass Kunci 1 Perangkat (Bisa Coba Peserta Lain)</span>
                         </label>
                       </div>
+
+                      {/* Clear All Attendance & Reset Lock Button */}
+                      <div style={{ marginTop: "14px", borderTop: "1px dashed #5a432f", paddingTop: "12px" }}>
+                        <button
+                          type="button"
+                          className="btn-danger-outline"
+                          onClick={() => void handleResetAllAttendanceAndLock()}
+                          title="Hapus semua data absensi dan reset sesi perangkat ini"
+                          style={{ width: "100%", justifyContent: "center", padding: "10px 14px", fontSize: "11px" }}
+                        >
+                          <Icon name="close" size={14} />
+                          <span>Hapus Semua Absensi & Reset Sesi Perangkat Ini</span>
+                        </button>
+                      </div>
                     </form>
                   </div>
                 )}
@@ -1047,7 +1218,7 @@ export function AttendanceApp() {
 
             {/* ACTIVE RESULT: OFFICIAL DETECTIVE ID CARD (INTEGRATED TYPEWRITER, NO BARCODE) */}
             {!isSearchingAgent && scannedMember && (
-              <div className="active-result-display">
+              <div className="active-result-display" id="official-detective-id-card">
                 <div className="detective-id-card panel">
                   {/* CARD TOPBAR */}
                   <div className="id-card-header">
