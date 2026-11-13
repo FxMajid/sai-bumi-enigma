@@ -635,7 +635,7 @@ export function AttendanceApp() {
         const readerElem = document.getElementById("attendance-camera-reader");
         if (!readerElem) return;
 
-        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+        const { Html5Qrcode } = await import("html5-qrcode");
         if (!active) return;
 
         if (html5QrCodeRef.current) {
@@ -651,18 +651,7 @@ export function AttendanceApp() {
         }
 
         const scanner = new Html5Qrcode("attendance-camera-reader", {
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.QR_CODE,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-          ],
           verbose: false,
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true,
-          },
         });
 
         html5QrCodeRef.current = scanner;
@@ -677,50 +666,33 @@ export function AttendanceApp() {
           });
         };
 
+        // Scan the full camera viewport without restrictive qrbox crop
         const scanConfig = {
-          fps: 20,
-          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            // Wider horizontal box for 1D Barcodes (Code 128)
-            const boxWidth = Math.floor(Math.min(viewfinderWidth * 0.94, 520));
-            const boxHeight = Math.floor(Math.min(viewfinderHeight * 0.75, 260));
-            return {
-              width: Math.max(boxWidth, 240),
-              height: Math.max(boxHeight, 140),
-            };
-          },
-          aspectRatio: 1.333334,
+          fps: 15,
         };
-
-        // Enumerate cameras to pick back camera or fallback gracefully
-        const cameras = await Html5Qrcode.getCameras().catch(() => []);
-        let cameraChoice: string | MediaTrackConstraints = {
-          facingMode: { ideal: "environment" },
-        };
-
-        if (cameras && cameras.length > 0) {
-          const backCam = cameras.find((c) =>
-            /back|rear|environment|belakang|main/i.test(c.label)
-          );
-          const lastCam = cameras[cameras.length - 1];
-          if (backCam) {
-            cameraChoice = backCam.id;
-          } else if (lastCam) {
-            cameraChoice = lastCam.id;
-          }
-        }
 
         try {
-          await scanner.start(cameraChoice, scanConfig, scanSuccessCallback, () => {});
+          await scanner.start(
+            { facingMode: "environment" },
+            scanConfig,
+            scanSuccessCallback,
+            () => {}
+          );
         } catch {
-          // Fallback to default/user facing camera if ideal environment / deviceId failed
+          // Fallback to user-facing camera if environment/rear camera is not available
           if (active) {
-            await scanner.start({ facingMode: "user" }, scanConfig, scanSuccessCallback, () => {});
+            await scanner.start(
+              { facingMode: "user" },
+              scanConfig,
+              scanSuccessCallback,
+              () => {}
+            );
           }
         }
       } catch (err: unknown) {
         if (!active) return;
         const msg = err instanceof Error ? err.message : String(err);
-        setScanError(`Gagal membuka kamera: ${msg}. Pastikan izin kamera aktif di browser Anda atau gunakan tombol "Ambil / Unggah Foto Barcode".`);
+        setScanError(`Gagal membuka kamera: ${msg}. Pastikan izin kamera aktif di browser Anda.`);
         setIsCameraActive(false);
       }
     }
@@ -917,17 +889,18 @@ export function AttendanceApp() {
               <div
                 id="attendance-camera-reader"
                 className={`scanner-camera-container ${isCameraActive ? "is-active" : "is-hidden"}`}
-              />
+              >
+                {isCameraActive && <div className="scanner-laser-line" />}
+              </div>
 
               {!isCameraActive && (
                 <div className="camera-idle-box">
                   <span className="camera-idle-icon">
                     <Icon name="search" size={40} />
                   </span>
-                  <strong>Kamera Pemindai Barcode</strong>
+                  <strong>Kamera Pemindai Barcode & QR Code</strong>
                   <p>
-                    Gunakan kamera perangkat atau scanner barcode fisik untuk membaca barcode tanda
-                    pengenal peserta.
+                    Arahkan kamera ke barcode fisik atau QR code tanda pengenal peserta untuk absensi resmi.
                   </p>
                 </div>
               )}
@@ -941,7 +914,7 @@ export function AttendanceApp() {
               >
                 <Icon name="refresh" size={16} />
                 <span>
-                  {isCameraActive ? "Matikan Kamera Pemindai" : "Buka Kamera Pemindai Barcode"}
+                  {isCameraActive ? "Matikan Kamera Pemindai" : "Buka Kamera Pemindai Barcode / QR Code"}
                 </span>
               </button>
             </div>

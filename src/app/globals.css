@@ -2588,24 +2588,41 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
   background: #0a0807 !important;
   border-radius: 4px;
   overflow: hidden;
+  position: relative;
 }
 
 #attendance-camera-reader video {
   width: 100% !important;
   height: auto !important;
-  max-height: 380px !important;
-  object-fit: cover !important;
+  display: block !important;
   border-radius: 4px;
 }
 
-#attendance-camera-reader canvas {
+.scanner-laser-line {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100% !important;
-  height: 100% !important;
+  right: 0;
+  height: 2px;
+  background: var(--color-gold);
+  box-shadow: 0 0 10px 2px var(--color-gold);
+  animation: scanLaser 2.2s ease-in-out infinite alternate;
   pointer-events: none;
-  opacity: 0.75;
+  z-index: 5;
+}
+
+@keyframes scanLaser {
+  0% {
+    top: 8%;
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    top: 92%;
+    opacity: 0.3;
+  }
 }
 
 #attendance-camera-reader img[alt="Info icon"] {
