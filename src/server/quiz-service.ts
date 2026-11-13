@@ -4,9 +4,11 @@ import type { QuizQuestion, QuizSubmissionRecord } from "@/domain/quiz";
 import type { Participant } from "@/domain/registration";
 import { createBackendClient } from "./supabase";
 import {
+  deleteLocalQuizSubmission,
   getLocalQuizSubmissions,
   getQuizStatus,
   recordLocalQuizSubmission,
+  resetAllLocalQuizSubmissions,
   setQuizStatus,
   type QuizSystemStatus,
 } from "./quiz-store";
@@ -20,8 +22,18 @@ export interface SubmitQuizPayload {
 }
 
 export function verifyAdminPassword(password: string): boolean {
-  const secret = process.env.ADMIN_PASSWORD || "adminenigma2026";
+  const secret = process.env.ADMIN_PASSWORD || "P@ssw0rd#adminEnigma2026";
   return password === secret;
+}
+
+export async function deleteQuizSubmission(submissionIdOrParticipantId: string): Promise<QuizSubmissionRecord[]> {
+  deleteLocalQuizSubmission(submissionIdOrParticipantId);
+  return getQuizSubmissionsList();
+}
+
+export async function resetAllQuizSubmissions(): Promise<QuizSubmissionRecord[]> {
+  resetAllLocalQuizSubmissions();
+  return [];
 }
 
 export async function getQuizSystemStatus(): Promise<QuizSystemStatus> {

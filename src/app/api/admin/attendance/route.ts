@@ -13,7 +13,7 @@ function checkAdminAuth(request: Request): boolean {
   const authHeader = request.headers.get("authorization") || "";
   return (
     cookie.includes("admin_session=authenticated") ||
-    authHeader.replace("Bearer ", "").trim() === (process.env.ADMIN_PASSWORD || "adminenigma2026")
+    authHeader.replace("Bearer ", "").trim() === (process.env.ADMIN_PASSWORD || "P@ssw0rd#adminEnigma2026")
   );
 }
 

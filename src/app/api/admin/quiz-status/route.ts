@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 function checkAdminAuth(request: Request): boolean {
   const cookie = request.headers.get("cookie") || "";
   const authHeader = request.headers.get("authorization") || "";
-  const adminSecret = process.env.ADMIN_PASSWORD || "adminenigma2026";
+  const adminSecret = process.env.ADMIN_PASSWORD || "P@ssw0rd#adminEnigma2026";
 
   return (
     cookie.includes("admin_session=authenticated") ||
