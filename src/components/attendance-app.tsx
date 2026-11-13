@@ -687,11 +687,6 @@ export function AttendanceApp() {
 
         const scanConfig = {
           fps: 20,
-          videoConstraints: {
-            facingMode: "environment",
-            width: { min: 640, ideal: 1280, max: 1920 },
-            height: { min: 480, ideal: 720, max: 1080 },
-          },
         };
 
         try {
@@ -706,14 +701,7 @@ export function AttendanceApp() {
           if (active) {
             await scanner.start(
               { facingMode: "user" },
-              {
-                ...scanConfig,
-                videoConstraints: {
-                  facingMode: "user",
-                  width: { min: 640, ideal: 1280, max: 1920 },
-                  height: { min: 480, ideal: 720, max: 1080 },
-                },
-              },
+              scanConfig,
               scanSuccessCallback,
               () => {}
             );
@@ -933,11 +921,13 @@ export function AttendanceApp() {
 
             {/* CAMERA TOGGLE & PREVIEW */}
             <div className="camera-viewport-wrap">
-              <div
-                id="attendance-camera-reader"
-                className={`scanner-camera-container ${isCameraActive ? "is-active" : "is-hidden"}`}
-              />
-              {isCameraActive && <div className="scanner-laser-line" />}
+              <div className={`scanner-camera-frame ${isCameraActive ? "is-active" : "is-hidden"}`}>
+                <div
+                  id="attendance-camera-reader"
+                  className="scanner-camera-container"
+                />
+                {isCameraActive && <div className="scanner-laser-line" />}
+              </div>
 
               {!isCameraActive && (
                 <div className="camera-idle-box">

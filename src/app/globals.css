@@ -2564,41 +2564,44 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
 /* Camera Box */
 .camera-viewport-wrap {
   margin-bottom: 22px;
-  position: relative;
-  overflow: hidden;
-  border-radius: 4px;
 }
 
-/* Html5Qrcode Scanner Container */
-.scanner-camera-container.is-hidden {
+.scanner-camera-frame.is-hidden {
   display: none !important;
 }
 
-.scanner-camera-container.is-active {
+.scanner-camera-frame.is-active {
   display: block !important;
   width: 100%;
-  min-height: 260px;
-  background: #000;
+  position: relative;
+  overflow: hidden;
   border: 2px solid var(--color-gold);
   border-radius: 4px;
-  overflow: hidden;
+  background: #000;
   margin-bottom: 12px;
-  position: relative;
+}
+
+.scanner-camera-container {
+  width: 100%;
+  height: auto;
 }
 
 #attendance-camera-reader {
   width: 100% !important;
-  background: #0a0807 !important;
+  height: auto !important;
+  background: #000 !important;
   border-radius: 4px;
   overflow: hidden;
   position: relative;
+  display: block !important;
 }
 
 #attendance-camera-reader video {
   width: 100% !important;
   height: auto !important;
+  max-height: 480px;
   display: block !important;
-  border-radius: 4px;
+  margin: 0 auto;
 }
 
 .scanner-laser-line {
