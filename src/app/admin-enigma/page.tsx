@@ -14,6 +14,7 @@ import { generateQrSvg } from "@/domain/qrcode-svg";
 import { Icon } from "@/components/icon";
 
 const DEVICE_LOCK_KEY = "sai_bumi_enigma_device_attendance_lock";
+const ATTENDANCE_STORAGE_KEY = "sai_bumi_enigma_attendance_records";
 
 function getAdminHeaders(): HeadersInit {
   const token =
@@ -199,6 +200,7 @@ export default function AdminPage() {
   function handleResetDeviceLockOnBrowser() {
     try {
       localStorage.removeItem(DEVICE_LOCK_KEY);
+      localStorage.removeItem(ATTENDANCE_STORAGE_KEY);
       setAttendanceNotice(
         "Kunci sesi perangkat pada browser ini berhasil dibuka. Perangkat ini kini dapat digunakan untuk absensi ulang tanpa menghapus data absensi peserta yang sudah tersimpan."
       );
@@ -255,6 +257,8 @@ export default function AdminPage() {
       });
       if (res.ok) {
         setAttendanceRecords({});
+        localStorage.removeItem(DEVICE_LOCK_KEY);
+        localStorage.removeItem(ATTENDANCE_STORAGE_KEY);
         setAttendanceNotice(
           "Seluruh data absensi peserta berhasil dikosongkan. Kunci di semua perangkat peserta otomatis ter-reset sehingga semua peserta dapat melakukan absensi ulang."
         );

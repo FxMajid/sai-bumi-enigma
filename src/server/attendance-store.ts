@@ -28,8 +28,22 @@ export function deleteServerAttendance(nik: string): Record<string, string> {
   return { ...current };
 }
 
-export function resetAllServerAttendance(): Record<string, string> {
+export async function resetAllServerAttendance(): Promise<Record<string, string>> {
   globalAttendanceStore.__sai_bumi_attendance_records = {};
+
+  if (process.env.APP_DATA_MODE !== "demo") {
+    try {
+      const { createBackendClient } = await import("./supabase");
+      const { client } = createBackendClient();
+      await client
+        .from("attendance_records")
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000");
+    } catch {
+      // Graceful fallback if database schema is local
+    }
+  }
+
   return {};
 }
 

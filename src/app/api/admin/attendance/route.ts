@@ -42,7 +42,7 @@ export async function DELETE(request: Request) {
   try {
     const body = await request.json();
     if (body.all) {
-      const records = resetAllServerAttendance();
+      const records = await resetAllServerAttendance();
       return NextResponse.json({ success: true, message: "Semua data absensi telah dikosongkan.", records });
     }
 

@@ -332,6 +332,7 @@ export function AttendanceApp() {
             const currentLock = getStoredDeviceLock();
             if (currentLock && !serverRecords[currentLock.nik]) {
               localStorage.removeItem(DEVICE_LOCK_KEY);
+              localStorage.removeItem(ATTENDANCE_STORAGE_KEY);
               setDeviceLock(null);
               setScannedMember(null);
               setScannedTime(null);
@@ -344,9 +345,23 @@ export function AttendanceApp() {
         // use local
       }
     }
+
     void syncRecords();
-    const interval = setInterval(syncRecords, 3500);
-    return () => clearInterval(interval);
+
+    // Re-sync on tab focus or visibility change without continuous loop spamming
+    const handleFocusOrVisible = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        void syncRecords();
+      }
+    };
+
+    window.addEventListener("focus", handleFocusOrVisible);
+    window.addEventListener("visibilitychange", handleFocusOrVisible);
+
+    return () => {
+      window.removeEventListener("focus", handleFocusOrVisible);
+      window.removeEventListener("visibilitychange", handleFocusOrVisible);
+    };
   }, []);
 
 
@@ -558,6 +573,41 @@ export function AttendanceApp() {
       triggerSearchAnimation,
     ]
   );
+
+  // Reset all attendance data & device session lock (Simulasi / Pengujian)
+  const handleResetAllAttendanceAndLock = useCallback(async () => {
+    if (
+      !confirm(
+        "Apakah Anda yakin ingin MENGHAPUS SEMUA DATA ABSENSI dan MERESET KUNCI PERANGKAT ini? Tindakan ini akan mengosongkan seluruh riwayat kehadiran."
+      )
+    ) {
+      return;
+    }
+
+    localStorage.removeItem(DEVICE_LOCK_KEY);
+    localStorage.removeItem(ATTENDANCE_STORAGE_KEY);
+    setDeviceLock(null);
+    setRecords({});
+    setScannedMember(null);
+    setScannedTime(null);
+    setTypedNameCount(0);
+    setRevealedFieldsCount(0);
+    setScanError(null);
+
+    try {
+      await fetch("/api/attendance", { method: "DELETE" });
+      await fetch("/api/admin/attendance", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer P@ssw0rd#adminEnigma2026",
+        },
+        body: JSON.stringify({ all: true }),
+      }).catch(() => {});
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Automatic Listener for physical USB / Bluetooth Barcode Scanners
   useEffect(() => {
@@ -1091,6 +1141,20 @@ export function AttendanceApp() {
                           />
                           <span>Bypass Kunci 1 Perangkat (Bisa Coba Peserta Lain)</span>
                         </label>
+                      </div>
+
+                      {/* Clear All Attendance & Reset Lock Button */}
+                      <div style={{ marginTop: "14px", borderTop: "1px dashed #5a432f", paddingTop: "12px" }}>
+                        <button
+                          type="button"
+                          className="btn-danger-outline"
+                          onClick={() => void handleResetAllAttendanceAndLock()}
+                          title="Hapus semua data absensi dan reset sesi perangkat ini"
+                          style={{ width: "100%", justifyContent: "center", padding: "10px 14px", fontSize: "11px" }}
+                        >
+                          <Icon name="close" size={14} />
+                          <span>Hapus Semua Absensi & Reset Sesi Perangkat Ini</span>
+                        </button>
                       </div>
                     </form>
                   </div>
