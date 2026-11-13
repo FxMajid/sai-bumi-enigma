@@ -2608,38 +2608,6 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
   opacity: 0.75;
 }
 
-.camera-action-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-}
-
-.btn-upload-barcode {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  padding: 11px 16px;
-  background: rgba(200, 168, 107, 0.08);
-  border: 1px dashed var(--color-gold);
-  border-radius: 4px;
-  color: var(--color-gold);
-  font-family: var(--font-cinzel), serif;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-upload-barcode:hover {
-  background: rgba(200, 168, 107, 0.18);
-  border-style: solid;
-}
-
 #attendance-camera-reader img[alt="Info icon"] {
   display: none !important;
 }
