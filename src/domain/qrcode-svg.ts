@@ -308,7 +308,8 @@ export function generateQrSvg(
     }
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalModules} ${totalModules}" width="${pixelSize}" height="${pixelSize}" shape-rendering="crispEdges">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalModules} ${totalModules}" width="${pixelSize}" height="${pixelSize}" data-barcode="${text}" shape-rendering="crispEdges">
+    <desc>${text}</desc>
     <rect width="${totalModules}" height="${totalModules}" fill="${bgColor}" />
     <path d="${pathParts.join("")}" fill="${color}" />
   </svg>`;

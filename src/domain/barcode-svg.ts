@@ -98,7 +98,8 @@ export function generateCode128Svg(
     textSvg = `<text x="${totalSvgWidth / 2}" y="${textY}" font-family="monospace" font-size="13" font-weight="bold" fill="${color}" text-anchor="middle" letter-spacing="2">${text}</text>`;
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalSvgWidth} ${totalSvgHeight}" width="100%" height="auto" style="background:${bgColor};">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalSvgWidth} ${totalSvgHeight}" width="${totalSvgWidth}" height="${totalSvgHeight}" data-barcode="${text}" style="background:${bgColor};">
+    <desc>${text}</desc>
     ${rects.join("")}
     ${textSvg}
   </svg>`;

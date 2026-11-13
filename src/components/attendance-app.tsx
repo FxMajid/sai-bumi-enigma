@@ -596,7 +596,7 @@ export function AttendanceApp() {
     setRevealedFieldsCount(6);
   };
 
-  // File upload scanner ref & handler
+  // File upload scanner ref & multi-stage decoder handler
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleScanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -605,6 +605,70 @@ export function AttendanceApp() {
 
     try {
       setScanError(null);
+
+      // Strategy 1: SVG File or XML text detection
+      // Barcode / QR downloaded from admin is an SVG file containing the code in metadata/text
+      const isSvgOrText =
+        file.name.toLowerCase().endsWith(".svg") ||
+        file.type.includes("svg") ||
+        file.type.includes("text") ||
+        file.type.includes("xml");
+
+      if (isSvgOrText) {
+        try {
+          const content = await file.text();
+          // Extract from <desc>, data-barcode, or <text> tag
+          const descMatch = content.match(/<desc>([^<]+)<\/desc>/i);
+          const dataMatch = content.match(/data-barcode="([^"]+)"/i);
+          const textMatch = content.match(/<text[^>]*>([^<]+)<\/text>/i);
+          const candidate = (descMatch?.[1] || dataMatch?.[1] || textMatch?.[1] || "").trim();
+
+          const member =
+            (candidate ? findMemberByBarcode(candidate) : null) ||
+            findMemberByBarcode(file.name) ||
+            findMemberByBarcode(content);
+
+          if (member) {
+            void handleProcessBarcode(member.barcode);
+            return;
+          }
+        } catch {
+          // If reading text fails, continue to image decoders
+        }
+      }
+
+      // Strategy 2: If filename directly matches a roster member (e.g. "[Nama] - [NIK].svg" or "[NIK].png")
+      const matchedByFilename = findMemberByBarcode(file.name);
+      if (matchedByFilename) {
+        void handleProcessBarcode(matchedByFilename.barcode);
+        return;
+      }
+
+      // Strategy 3: Native Browser BarcodeDetector API (fast & high accuracy)
+      if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+        try {
+          const BarcodeDetectorClass = (
+            window as unknown as {
+              BarcodeDetector: new (opts: { formats: string[] }) => {
+                detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue: string }>>;
+              };
+            }
+          ).BarcodeDetector;
+          const detector = new BarcodeDetectorClass({
+            formats: ["code_128", "qr_code", "code_39", "ean_13", "upc_a", "upc_e"],
+          });
+          const bitmap = await createImageBitmap(file);
+          const detected = await detector.detect(bitmap);
+          if (detected && detected.length > 0 && detected[0]?.rawValue) {
+            void handleProcessBarcode(detected[0].rawValue);
+            return;
+          }
+        } catch {
+          // Continue to ZXing / Html5Qrcode fallback
+        }
+      }
+
+      // Strategy 4: Html5Qrcode scanFile (with showImage = false so it never touches DOM geometry)
       const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
       const tempScanner = new Html5Qrcode("attendance-file-reader-dummy", {
         formatsToSupport: [
@@ -616,18 +680,76 @@ export function AttendanceApp() {
           Html5QrcodeSupportedFormats.UPC_E,
         ],
         verbose: false,
-        experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true,
-        },
       });
 
-      const decoded = await tempScanner.scanFile(file, true);
-      tempScanner.clear();
-      if (decoded) {
-        void handleProcessBarcode(decoded);
-      } else {
-        setScanError("Barcode tidak dapat terbaca dari foto. Pastikan barcode terlihat jelas, fokus, dan tidak terpotong.");
+      try {
+        const decoded = await tempScanner.scanFile(file, false);
+        tempScanner.clear();
+        if (decoded) {
+          void handleProcessBarcode(decoded);
+          return;
+        }
+      } catch {
+        try {
+          tempScanner.clear();
+        } catch {
+          // ignore
+        }
       }
+
+      // Strategy 5: Offscreen Canvas Rasterization (Renders image/SVG onto a clean contrast canvas and scans blob)
+      try {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+        const imageLoaded = await new Promise<boolean>((resolve) => {
+          img.onload = () => resolve(true);
+          img.onerror = () => resolve(false);
+          img.src = objectUrl;
+        });
+
+        if (imageLoaded) {
+          const canvas = document.createElement("canvas");
+          const width = Math.max(img.naturalWidth || img.width || 600, 600);
+          const height = Math.max(img.naturalHeight || img.height || 300, 300);
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const blob = await new Promise<Blob | null>((resolve) =>
+              canvas.toBlob((b) => resolve(b), "image/png")
+            );
+
+            if (blob) {
+              const canvasScanner = new Html5Qrcode("attendance-file-reader-dummy", {
+                formatsToSupport: [
+                  Html5QrcodeSupportedFormats.CODE_128,
+                  Html5QrcodeSupportedFormats.QR_CODE,
+                  Html5QrcodeSupportedFormats.CODE_39,
+                  Html5QrcodeSupportedFormats.EAN_13,
+                ],
+                verbose: false,
+              });
+              const canvasFile = new File([blob], "rasterized-barcode.png", { type: "image/png" });
+              const canvasDecoded = await canvasScanner.scanFile(canvasFile, false);
+              canvasScanner.clear();
+              if (canvasDecoded) {
+                URL.revokeObjectURL(objectUrl);
+                void handleProcessBarcode(canvasDecoded);
+                return;
+              }
+            }
+          }
+        }
+        URL.revokeObjectURL(objectUrl);
+      } catch {
+        // continue
+      }
+
+      setScanError("Barcode tidak dapat terbaca dari gambar. Pastikan gambar memuat barcode atau QR code dengan jelas.");
     } catch {
       setScanError("Gagal membaca barcode dari gambar. Pastikan gambar memuat barcode dengan jelas.");
     } finally {
@@ -998,15 +1120,26 @@ export function AttendanceApp() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/*,.svg"
                   capture="environment"
                   style={{ display: "none" }}
                   onChange={(e) => void handleScanFile(e)}
                 />
               </div>
 
-              {/* Hidden dummy container for photo barcode scanner */}
-              <div id="attendance-file-reader-dummy" style={{ display: "none" }} />
+              {/* Offscreen container for photo barcode scanner with valid dimensions */}
+              <div
+                id="attendance-file-reader-dummy"
+                style={{
+                  position: "fixed",
+                  top: "-9999px",
+                  left: "-9999px",
+                  width: "400px",
+                  height: "400px",
+                  opacity: 0,
+                  pointerEvents: "none",
+                }}
+              />
             </div>
 
             {/* ERROR NOTICE */}
