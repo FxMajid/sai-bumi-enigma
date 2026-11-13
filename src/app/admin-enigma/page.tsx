@@ -124,6 +124,54 @@ export default function AdminPage() {
     }
   }
 
+  // Delete quiz submission of a specific participant
+  async function handleDeleteSingleSubmission(id: string, name: string) {
+    if (!confirm(`Hapus data hasil kuis untuk ${name}? Peserta ini dapat mengikuti kuis kembali.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/admin/results", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (res.ok) {
+        setSubmissions((prev) => prev.filter((s) => s.id !== id));
+      } else {
+        alert("Gagal menghapus data kuis.");
+      }
+    } catch {
+      alert("Terjadi kesalahan jaringan.");
+    }
+  }
+
+  // Reset ALL quiz submissions
+  async function handleResetAllQuizSubmissions() {
+    if (
+      !confirm(
+        "PERINGATAN: Apakah Anda yakin ingin mengosongkan / menghapus SELURUH data hasil kuis peserta? Tindakan ini tidak dapat dibatalkan."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/admin/results", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ all: true }),
+      });
+      if (res.ok) {
+        setSubmissions([]);
+      } else {
+        alert("Gagal mengosongkan data kuis.");
+      }
+    } catch {
+      alert("Terjadi kesalahan jaringan.");
+    }
+  }
+
   // Reset Device Lock on this browser without deleting historical attendance
   function handleResetDeviceLockOnBrowser() {
     try {
@@ -655,6 +703,18 @@ export default function AdminPage() {
                 <Icon name="download" size={16} />
                 <span>{exporting ? "Menyiapkan..." : "Export Nilai (.xlsx)"}</span>
               </button>
+
+              {submissions.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-danger-outline"
+                  onClick={handleResetAllQuizSubmissions}
+                  title="Hapus seluruh data hasil kuis peserta"
+                >
+                  <Icon name="close" size={15} />
+                  <span>Kosongkan Hasil Kuis</span>
+                </button>
+              )}
             </div>
           </section>
 
@@ -679,6 +739,7 @@ export default function AdminPage() {
                       <th>Salah</th>
                       <th>Durasi</th>
                       <th>Waktu Selesai</th>
+                      <th>Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -704,7 +765,7 @@ export default function AdminPage() {
                             <span
                               className={`score-tag ${
                                 sub.score >= 90
-                                  ? "score-high"
+                                    ? "score-high"
                                   : sub.score >= 70
                                   ? "score-med"
                                   : "score-low"
@@ -717,6 +778,16 @@ export default function AdminPage() {
                           <td className="col-center text-danger">{sub.wrongCount}</td>
                           <td className="col-time">{timeStr}</td>
                           <td className="col-date">{dateStr} WIB</td>
+                          <td className="col-center">
+                            <button
+                              type="button"
+                              className="btn-table-delete-attendance"
+                              onClick={() => handleDeleteSingleSubmission(sub.id, sub.participantName)}
+                              title={`Hapus data nilai ${sub.participantName}`}
+                            >
+                              Hapus
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}

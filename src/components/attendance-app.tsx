@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Html5Qrcode } from "html5-qrcode";
 import {
   ATTENDANCE_ROSTER,
   ATTENDANCE_TARGET_LOCATION,
@@ -157,20 +158,133 @@ export function AttendanceApp() {
   // Scanner state
   const [scanError, setScanError] = useState<string | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  // Html5Qrcode Scanner instance ref & in-flight guard
+  const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  const isProcessingScanRef = useRef(false);
+
+  // Localhost environment check (Hanya izinkan mode simulasi di localhost)
+  const [isLocalhost] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const host = window.location.hostname;
+    return (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host.endsWith(".local") ||
+      host.startsWith("192.168.") ||
+      host.startsWith("10.") ||
+      host === "0.0.0.0"
+    );
+  });
 
   // Geolocation state (PT. Tunas Dwipa Matra - TDM)
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
+    accuracy: number;
     distanceMeters: number;
     isWithinRange: boolean;
+    timestamp: number;
   } | null>(null);
   const [locationStatus, setLocationStatus] = useState<
     "idle" | "checking" | "granted" | "denied" | "out_of_range"
   >("idle");
   const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Detect live device GPS location
+  const detectDeviceLocation = useCallback(async (): Promise<boolean> => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setLocationStatus("denied");
+      setLocationError("Browser atau perangkat Anda tidak mendukung fitur deteksi lokasi GPS.");
+      return false;
+    }
+
+    setLocationStatus("checking");
+    setLocationError(null);
+
+    return new Promise<boolean>((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          const distance = calculateDistanceMeters(
+            latitude,
+            longitude,
+            ATTENDANCE_TARGET_LOCATION.latitude,
+            ATTENDANCE_TARGET_LOCATION.longitude
+          );
+          const withinRange = distance <= ATTENDANCE_TARGET_LOCATION.maxRadiusMeters;
+
+          setUserLocation({
+            latitude,
+            longitude,
+            accuracy: Math.round(accuracy || 0),
+            distanceMeters: distance,
+            isWithinRange: withinRange,
+            timestamp: Date.now(),
+          });
+
+          if (withinRange) {
+            setLocationStatus("granted");
+            resolve(true);
+          } else {
+            setLocationStatus("out_of_range");
+            setLocationError(
+              `Perangkat Anda terdeteksi berjarak ${distance.toLocaleString(
+                "id-ID"
+              )} meter dari PT. Tunas Dwipa Matra (TDM). Absensi HANYA DAPAT DILAKUKAN di lokasi acara (radius maksimal ${
+                ATTENDANCE_TARGET_LOCATION.maxRadiusMeters
+              }m).`
+            );
+            resolve(false);
+          }
+        },
+        (err) => {
+          let msg = "Akses lokasi diperlukan untuk memverifikasi kehadiran di area acara PT. Tunas Dwipa Matra.";
+          if (err.code === err.PERMISSION_DENIED) {
+            msg = "Izin lokasi GPS ditolak oleh browser/perangkat. Harap aktifkan izin lokasi di pengaturan browser agar dapat absensi.";
+          } else if (err.code === err.POSITION_UNAVAILABLE) {
+            msg = "Sinyal GPS perangkat tidak terdeteksi. Pastikan GPS/Location perangkat telah diaktifkan.";
+          } else if (err.code === err.TIMEOUT) {
+            msg = "Waktu permintaan lokasi GPS habis. Silakan klik 'Deteksi Ulang GPS Perangkat'.";
+          }
+          setLocationStatus("denied");
+          setLocationError(msg);
+          resolve(false);
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      );
+    });
+  }, []);
+
+  // Run device location detection automatically on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void detectDeviceLocation();
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [detectDeviceLocation]);
+
+  // Check GPS Location - Strict Enforcement
+  const verifyLocation = useCallback(
+    async (allowSimulationBypass = false): Promise<boolean> => {
+      // Allow bypass ONLY if in localhost and simulation mode explicitly checks bypass
+      if (allowSimulationBypass && isLocalhost) {
+        return true;
+      }
+
+      // If userLocation was determined very recently (< 15 seconds ago) and is within range
+      if (
+        userLocation &&
+        userLocation.isWithinRange &&
+        Date.now() - userLocation.timestamp < 15000
+      ) {
+        return true;
+      }
+
+      // Otherwise re-check live GPS coordinates
+      return await detectDeviceLocation();
+    },
+    [isLocalhost, userLocation, detectDeviceLocation]
+  );
 
   // Magnifying glass radar searching state
   const [isSearchingAgent, setIsSearchingAgent] = useState(false);
@@ -219,76 +333,7 @@ export function AttendanceApp() {
     void syncRecords();
   }, []);
 
-  // Check GPS Location
-  const verifyLocation = useCallback(async (): Promise<boolean> => {
-    // If on localhost or private dev environment, allow bypass for testing
-    if (
-      typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1" ||
-        window.location.hostname.endsWith(".local"))
-    ) {
-      return true;
-    }
 
-    if (typeof window === "undefined" || !("geolocation" in navigator)) {
-      return true;
-    }
-
-    setLocationStatus("checking");
-    setLocationError(null);
-
-    return new Promise<boolean>((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          const distance = calculateDistanceMeters(
-            latitude,
-            longitude,
-            ATTENDANCE_TARGET_LOCATION.latitude,
-            ATTENDANCE_TARGET_LOCATION.longitude
-          );
-          const withinRange = distance <= ATTENDANCE_TARGET_LOCATION.maxRadiusMeters;
-
-          setUserLocation({
-            latitude,
-            longitude,
-            distanceMeters: distance,
-            isWithinRange: withinRange,
-          });
-
-          if (withinRange) {
-            setLocationStatus("granted");
-            resolve(true);
-          } else {
-            setLocationStatus("out_of_range");
-            setLocationError(
-              `Lokasi Anda terdeteksi berjarak ${distance.toLocaleString(
-                "id-ID"
-              )} meter dari PT. Tunas Dwipa Matra (TDM). Absensi hanya dapat dilakukan di area acara (radius ${
-                ATTENDANCE_TARGET_LOCATION.maxRadiusMeters
-              }m).`
-            );
-            resolve(false);
-          }
-        },
-        (err) => {
-          let msg = "Akses lokasi diperlukan untuk memverifikasi kehadiran di area acara.";
-          if (err.code === err.PERMISSION_DENIED) {
-            msg = "Izin lokasi (GPS) ditolak. Silakan izinkan akses lokasi pada browser Anda.";
-          } else if (err.code === err.POSITION_UNAVAILABLE) {
-            msg = "Sinyal lokasi tidak terdeteksi. Pastikan GPS perangkat Anda aktif.";
-          } else if (err.code === err.TIMEOUT) {
-            msg = "Waktu permintaan lokasi habis. Silakan coba kembali.";
-          }
-          setLocationStatus("denied");
-          setLocationError(msg);
-          resolve(false);
-        },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-      );
-    });
-  }, []);
 
   // Execute attendance check-in after radar search completes
   const executeAttendanceConfirmation = useCallback(
@@ -384,22 +429,39 @@ export function AttendanceApp() {
         return;
       }
 
-      // 2. Geolocation Check (Target location PT. Tunas Dwipa Matra - TDM)
-      const isLocationValid = await verifyLocation();
+      // 2. Strict Geolocation Check (Target location PT. Tunas Dwipa Matra - TDM)
+      const isSimulationBypassed = isLocalhost && isSimulationOpen && simulationBypassGps;
+      const isLocationValid = await verifyLocation(isSimulationBypassed);
       if (!isLocationValid) {
+        setScanError(
+          locationError ||
+            `ABSENSI DITOLAK: Perangkat Anda berada di luar area acara PT. Tunas Dwipa Matra (TDM). Jarak saat ini: ${
+              userLocation ? userLocation.distanceMeters.toLocaleString("id-ID") + "m" : "tidak terdeteksi"
+            } (Maksimal ${ATTENDANCE_TARGET_LOCATION.maxRadiusMeters}m).`
+        );
         return;
       }
 
       // 3. Trigger magnifying glass radar search animation
       triggerSearchAnimation(member);
     },
-    [verifyLocation, triggerSearchAnimation]
+    [
+      isLocalhost,
+      isSimulationOpen,
+      simulationBypassGps,
+      verifyLocation,
+      locationError,
+      userLocation,
+      triggerSearchAnimation,
+    ]
   );
 
-  // Handle Simulation NIK Submission (Khusus Pengujian / Testing)
+  // Handle Simulation NIK Submission (Hanya di Localhost / Testing)
   const handleSimulateNikSubmit = useCallback(
     async (e?: React.FormEvent, explicitNik?: string) => {
       if (e) e.preventDefault();
+      if (!isLocalhost) return;
+
       const targetNik = (explicitNik ?? simulationNik).trim();
       if (!targetNik) return;
 
@@ -423,17 +485,27 @@ export function AttendanceApp() {
       }
 
       // Check GPS location unless bypassed for simulation
-      if (!simulationBypassGps) {
-        const isLocationValid = await verifyLocation();
-        if (!isLocationValid) {
-          return;
-        }
+      const isLocationValid = await verifyLocation(simulationBypassGps);
+      if (!isLocationValid) {
+        setScanError(
+          locationError ||
+            `ABSENSI DITOLAK: Anda berada di luar area acara PT. Tunas Dwipa Matra (TDM) (radius maksimal ${ATTENDANCE_TARGET_LOCATION.maxRadiusMeters}m).`
+        );
+        return;
       }
 
       // Trigger radar animation & check-in
       triggerSearchAnimation(member);
     },
-    [simulationNik, simulationBypassDeviceLock, simulationBypassGps, verifyLocation, triggerSearchAnimation]
+    [
+      isLocalhost,
+      simulationNik,
+      simulationBypassDeviceLock,
+      simulationBypassGps,
+      verifyLocation,
+      locationError,
+      triggerSearchAnimation,
+    ]
   );
 
   // Automatic Listener for physical USB / Bluetooth Barcode Scanners
@@ -502,81 +574,116 @@ export function AttendanceApp() {
     setRevealedFieldsCount(6);
   };
 
-  // Camera video barcode scanner
+  // Camera barcode scanner using html5-qrcode (ZXing engine: Code 128, QR Code, Code 39, EAN 13)
   useEffect(() => {
     if (!isCameraActive) {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
+      if (html5QrCodeRef.current) {
+        const scanner = html5QrCodeRef.current;
+        html5QrCodeRef.current = null;
+        if (scanner.isScanning) {
+          scanner
+            .stop()
+            .then(() => scanner.clear())
+            .catch(() => {});
+        } else {
+          try {
+            scanner.clear();
+          } catch {
+            // ignore
+          }
+        }
       }
       return;
     }
 
     let active = true;
-    let scanInterval: NodeJS.Timeout | null = null;
 
-    async function startCamera() {
+    async function startScanner() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } },
-        });
-        if (!active) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {});
-        }
+        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
+        if (!active) return;
 
-        if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+        const readerElem = document.getElementById("attendance-camera-reader");
+        if (!readerElem) return;
+
+        if (html5QrCodeRef.current) {
           try {
-            const BarcodeDetectorClass = (window as unknown as {
-              BarcodeDetector: new (opts?: { formats: string[] }) => {
-                detect: (source: ImageBitmapSource) => Promise<{ rawValue: string }[]>;
-              };
-            }).BarcodeDetector;
-            const detector = new BarcodeDetectorClass({
-              formats: ["code_128", "qr_code", "code_39", "ean_13"],
-            });
-
-            scanInterval = setInterval(async () => {
-              if (
-                videoRef.current &&
-                videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA
-              ) {
-                try {
-                  const barcodes = await detector.detect(videoRef.current);
-                  const firstBarcode = barcodes[0];
-                  if (firstBarcode?.rawValue) {
-                    void handleProcessBarcode(firstBarcode.rawValue);
-                  }
-                } catch {
-                  // ignore
-                }
-              }
-            }, 300);
+            if (html5QrCodeRef.current.isScanning) {
+              await html5QrCodeRef.current.stop();
+            }
+            html5QrCodeRef.current.clear();
           } catch {
-            // fallback
+            // ignore
           }
+          html5QrCodeRef.current = null;
         }
-      } catch {
-        setScanError(
-          "Tidak dapat membuka kamera perangkat. Pastikan izin kamera aktif untuk memindai barcode."
+
+        const scanner = new Html5Qrcode("attendance-camera-reader", {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+          ],
+          verbose: false,
+        });
+
+        html5QrCodeRef.current = scanner;
+
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 15,
+            qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+              const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+              const boxWidth = Math.floor(viewfinderWidth * 0.88);
+              const boxHeight = Math.floor(Math.min(minEdge * 0.72, 240));
+              return { width: boxWidth, height: boxHeight };
+            },
+            aspectRatio: 1.333334,
+          },
+          (decodedText: string) => {
+            if (isProcessingScanRef.current) return;
+            isProcessingScanRef.current = true;
+            void handleProcessBarcode(decodedText).finally(() => {
+              setTimeout(() => {
+                isProcessingScanRef.current = false;
+              }, 1500);
+            });
+          },
+          () => {
+            // Frame error - ignore
+          }
         );
+      } catch (err: unknown) {
+        if (!active) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        setScanError(`Gagal membuka kamera: ${msg}. Pastikan izin kamera aktif di browser Anda.`);
         setIsCameraActive(false);
       }
     }
 
-    void startCamera();
+    void startScanner();
 
     return () => {
       active = false;
-      if (scanInterval) clearInterval(scanInterval);
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
+      if (html5QrCodeRef.current) {
+        const scanner = html5QrCodeRef.current;
+        html5QrCodeRef.current = null;
+        if (scanner.isScanning) {
+          scanner
+            .stop()
+            .then(() => scanner.clear())
+            .catch(() => {});
+        } else {
+          try {
+            scanner.clear();
+          } catch {
+            // ignore
+          }
+        }
       }
     };
   }, [isCameraActive, handleProcessBarcode]);
@@ -624,7 +731,9 @@ export function AttendanceApp() {
               className={`location-verification-card ${
                 locationStatus === "granted"
                   ? "is-verified"
-                  : locationStatus === "out_of_range" || locationStatus === "denied"
+                  : locationStatus === "out_of_range"
+                  ? "is-rejected"
+                  : locationStatus === "denied"
                   ? "is-warning"
                   : ""
               }`}
@@ -634,77 +743,123 @@ export function AttendanceApp() {
                   <Icon name="compass" size={16} />
                 </span>
                 <div>
-                  <strong>Lokasi: PT. Tunas Dwipa Matra (TDM)</strong>
+                  <strong>Lokasi Acara: PT. Tunas Dwipa Matra (TDM)</strong>
                   <span className="loc-coords">
                     Lat: {ATTENDANCE_TARGET_LOCATION.latitude.toFixed(5)}, Long:{" "}
-                    {ATTENDANCE_TARGET_LOCATION.longitude.toFixed(5)}
+                    {ATTENDANCE_TARGET_LOCATION.longitude.toFixed(5)} · Radius Maks:{" "}
+                    {ATTENDANCE_TARGET_LOCATION.maxRadiusMeters}m
                   </span>
                 </div>
               </div>
 
-              <div className="loc-status-detail">
-                {locationStatus === "checking" ? (
-                  <span className="loc-detecting">
-                    <span className="spinner small" /> Memeriksa koordinat GPS...
-                  </span>
-                ) : locationStatus === "granted" ? (
-                  <span className="loc-success">
-                    <Icon name="check" size={14} /> Lokasi terverifikasi di area acara (Jarak:{" "}
-                    {userLocation?.distanceMeters}m)
-                  </span>
-                ) : locationStatus === "out_of_range" ? (
-                  <div className="loc-alert">
-                    <p>
-                      <Icon name="info" size={14} /> Jarak Anda saat ini:{" "}
-                      <strong>{userLocation?.distanceMeters.toLocaleString("id-ID")}m</strong> dari
-                      lokasi acara (radius maksimal {ATTENDANCE_TARGET_LOCATION.maxRadiusMeters}m).
-                    </p>
-                    <a
-                      href={ATTENDANCE_TARGET_LOCATION.mapUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn-open-map"
-                    >
-                      <span>Buka Google Maps</span>
-                      <Icon name="arrow" size={14} />
-                    </a>
-                  </div>
-                ) : locationStatus === "denied" ? (
-                  <div className="loc-alert">
-                    <p>
-                      <Icon name="info" size={14} /> {locationError}
-                    </p>
-                    <button
-                      type="button"
-                      className="btn-retry-loc"
-                      onClick={() => void verifyLocation()}
-                    >
-                      Periksa Ulang Lokasi GPS
-                    </button>
+              {/* REAL DEVICE GPS DETAIL BOX */}
+              <div className="device-gps-info-box">
+                <div className="gps-row-header">
+                  <span className="gps-label">LOKASI PERANGKAT ANDA:</span>
+                  {locationStatus === "checking" ? (
+                    <span className="gps-status-pill pill-checking">
+                      <span className="spinner small" /> Memeriksa GPS...
+                    </span>
+                  ) : locationStatus === "granted" ? (
+                    <span className="gps-status-pill pill-valid">
+                      <Icon name="check" size={12} /> DI AREA ACARA (VALID)
+                    </span>
+                  ) : locationStatus === "out_of_range" ? (
+                    <span className="gps-status-pill pill-invalid">
+                      <Icon name="close" size={12} /> DI LUAR AREA ACARA
+                    </span>
+                  ) : locationStatus === "denied" ? (
+                    <span className="gps-status-pill pill-denied">
+                      <Icon name="close" size={12} /> IZIN GPS DITOLAK
+                    </span>
+                  ) : (
+                    <span className="gps-status-pill pill-standby">STANDBY</span>
+                  )}
+                </div>
+
+                {userLocation ? (
+                  <div className="gps-metrics-grid">
+                    <div className="gps-metric-item">
+                      <span className="metric-lbl">Koordinat Perangkat</span>
+                      <strong className="metric-val">
+                        {userLocation.latitude.toFixed(5)}, {userLocation.longitude.toFixed(5)}
+                      </strong>
+                    </div>
+                    <div className="gps-metric-item">
+                      <span className="metric-lbl">Akurasi GPS</span>
+                      <strong className="metric-val">±{userLocation.accuracy} meter</strong>
+                    </div>
+                    <div className="gps-metric-item">
+                      <span className="metric-lbl">Jarak ke Lokasi TDM</span>
+                      <strong
+                        className={`metric-val ${
+                          userLocation.isWithinRange ? "text-success" : "text-danger"
+                        }`}
+                      >
+                        {userLocation.distanceMeters.toLocaleString("id-ID")} meter
+                      </strong>
+                    </div>
                   </div>
                 ) : (
-                  <span className="loc-standby">
-                    Lokasi GPS diverifikasi secara otomatis saat pemindaian barcode.
-                  </span>
+                  <p className="gps-pending-text">
+                    {locationStatus === "checking"
+                      ? "Sedang membaca koordinat GPS perangkat Anda..."
+                      : "Koordinat GPS perangkat belum terdeteksi. Silakan klik tombol di bawah untuk memeriksa."}
+                  </p>
                 )}
+
+                {locationStatus === "out_of_range" && (
+                  <div className="loc-strict-alert">
+                    <Icon name="info" size={14} />
+                    <span>
+                      Absensi DITOLAK karena perangkat Anda berjarak{" "}
+                      <strong>
+                        {userLocation?.distanceMeters.toLocaleString("id-ID")} meter
+                      </strong>{" "}
+                      dari PT. Tunas Dwipa Matra (radius maksimal {ATTENDANCE_TARGET_LOCATION.maxRadiusMeters}m).
+                    </span>
+                  </div>
+                )}
+
+                {locationStatus === "denied" && locationError && (
+                  <div className="loc-strict-alert alert-denied">
+                    <Icon name="close" size={14} />
+                    <span>{locationError}</span>
+                  </div>
+                )}
+
+                <div className="loc-action-bar">
+                  <button
+                    type="button"
+                    className="btn-retry-loc"
+                    onClick={() => void detectDeviceLocation()}
+                    disabled={locationStatus === "checking"}
+                  >
+                    <Icon name="refresh" size={13} />
+                    <span>Deteksi Ulang GPS Perangkat</span>
+                  </button>
+
+                  <a
+                    href={ATTENDANCE_TARGET_LOCATION.mapUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-open-map"
+                  >
+                    <span>Buka Peta Lokasi TDM</span>
+                    <Icon name="arrow" size={13} />
+                  </a>
+                </div>
               </div>
             </div>
 
             {/* CAMERA TOGGLE & PREVIEW */}
             <div className="camera-viewport-wrap">
-              {isCameraActive ? (
-                <div className="camera-active-box">
-                  <video ref={videoRef} playsInline muted className="scanner-video" />
-                  <div className="camera-crosshairs">
-                    <div className="laser-scanner-line" />
-                    <div className="scanner-corner tl" />
-                    <div className="scanner-corner tr" />
-                    <div className="scanner-corner bl" />
-                    <div className="scanner-corner br" />
-                    <span className="camera-hint">Arahkan Barcode ke Garis Pindai</span>
-                  </div>
-                </div>
-              ) : (
+              <div
+                id="attendance-camera-reader"
+                className={`scanner-camera-container ${isCameraActive ? "is-active" : "is-hidden"}`}
+              />
+
+              {!isCameraActive && (
                 <div className="camera-idle-box">
                   <span className="camera-idle-icon">
                     <Icon name="search" size={40} />
@@ -722,7 +877,7 @@ export function AttendanceApp() {
                 className={`btn-camera-toggle ${
                   isCameraActive ? "btn-camera-stop" : "btn-camera-start"
                 }`}
-                onClick={() => setIsCameraActive(!isCameraActive)}
+                onClick={() => setIsCameraActive((prev) => !prev)}
               >
                 <Icon name="refresh" size={16} />
                 <span>
@@ -739,100 +894,102 @@ export function AttendanceApp() {
               </div>
             )}
 
-            {/* SIMULATION MODE PANEL (KHUSUS PENGUJIAN / TESTING) */}
-            <div className="attendance-simulation-box">
-              <div className="simulation-header-toggle">
-                <div className="sim-title-wrap">
-                  <span className="sim-badge">MODE SIMULASI</span>
-                  <span className="sim-caption">Pengujian Input NIK (Testing)</span>
+            {/* SIMULATION MODE PANEL (HANYA DITAMPILKAN DI LOCALHOST) */}
+            {isLocalhost && (
+              <div className="attendance-simulation-box">
+                <div className="simulation-header-toggle">
+                  <div className="sim-title-wrap">
+                    <span className="sim-badge">MODE SIMULASI LOCALHOST</span>
+                    <span className="sim-caption">Pengujian Input NIK (Testing Saja)</span>
+                  </div>
+                  <button
+                    type="button"
+                    className={`btn-toggle-sim ${isSimulationOpen ? "is-open" : ""}`}
+                    onClick={() => setIsSimulationOpen(!isSimulationOpen)}
+                    title="Buka / Tutup panel simulasi input NIK"
+                  >
+                    <Icon name="search" size={14} />
+                    <span>{isSimulationOpen ? "Tutup Simulasi" : "Simulasi Input NIK"}</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className={`btn-toggle-sim ${isSimulationOpen ? "is-open" : ""}`}
-                  onClick={() => setIsSimulationOpen(!isSimulationOpen)}
-                  title="Buka / Tutup panel simulasi input NIK"
-                >
-                  <Icon name="search" size={14} />
-                  <span>{isSimulationOpen ? "Tutup Simulasi" : "Simulasi Input NIK"}</span>
-                </button>
+
+                {isSimulationOpen && (
+                  <div className="simulation-body-panel">
+                    <p className="simulation-intro-text">
+                      Panel ini khusus pengujian lokal (localhost). Di server production, panel ini otomatis tersembunyi.
+                    </p>
+
+                    <form className="simulation-form" onSubmit={(e) => void handleSimulateNikSubmit(e)}>
+                      <div className="sim-input-row">
+                        <input
+                          type="text"
+                          className="quiz-input sim-text-input"
+                          placeholder="Ketik NIK peserta (contoh: DMAD18021)..."
+                          value={simulationNik}
+                          onChange={(e) => setSimulationNik(e.target.value)}
+                          autoComplete="off"
+                        />
+                        <button
+                          type="submit"
+                          className="button button-gold sim-btn-submit"
+                          disabled={!simulationNik.trim()}
+                        >
+                          <Icon name="check" size={16} />
+                          <span>Simulasi Absen</span>
+                        </button>
+                      </div>
+
+                      {/* Quick selection dropdown from roster */}
+                      <div className="sim-select-row">
+                        <label className="sim-select-lbl" htmlFor="sim-quick-select">
+                          Atau pilih langsung dari peserta resmi:
+                        </label>
+                        <select
+                          id="sim-quick-select"
+                          className="quiz-input sim-select-dropdown"
+                          value={simulationNik}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSimulationNik(val);
+                            if (val) {
+                              void handleSimulateNikSubmit(undefined, val);
+                            }
+                          }}
+                        >
+                          <option value="">-- Pilih Peserta untuk Simulasi --</option>
+                          {ATTENDANCE_ROSTER.map((m) => (
+                            <option key={m.nik} value={m.nik}>
+                              {m.nama} ({m.nik}) — {m.namaKelompok}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Simulation Options (Bypass GPS & Bypass Device Lock) */}
+                      <div className="sim-options-grid">
+                        <label className="sim-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={simulationBypassGps}
+                            onChange={(e) => setSimulationBypassGps(e.target.checked)}
+                          />
+                          <span>Bypass Lokasi GPS (Khusus Simulasi)</span>
+                        </label>
+
+                        <label className="sim-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={simulationBypassDeviceLock}
+                            onChange={(e) => setSimulationBypassDeviceLock(e.target.checked)}
+                          />
+                          <span>Bypass Kunci 1 Perangkat (Bisa Coba Peserta Lain)</span>
+                        </label>
+                      </div>
+                    </form>
+                  </div>
+                )}
               </div>
-
-              {isSimulationOpen && (
-                <div className="simulation-body-panel">
-                  <p className="simulation-intro-text">
-                    Gunakan panel ini untuk menguji animasi radar pencarian detektif dan cetak kartu identitas resmi tanpa menggunakan barcode fisik.
-                  </p>
-
-                  <form className="simulation-form" onSubmit={(e) => void handleSimulateNikSubmit(e)}>
-                    <div className="sim-input-row">
-                      <input
-                        type="text"
-                        className="quiz-input sim-text-input"
-                        placeholder="Ketik NIK peserta (contoh: DMAD18021)..."
-                        value={simulationNik}
-                        onChange={(e) => setSimulationNik(e.target.value)}
-                        autoComplete="off"
-                      />
-                      <button
-                        type="submit"
-                        className="button button-gold sim-btn-submit"
-                        disabled={!simulationNik.trim()}
-                      >
-                        <Icon name="check" size={16} />
-                        <span>Simulasi Absen</span>
-                      </button>
-                    </div>
-
-                    {/* Quick selection dropdown from roster */}
-                    <div className="sim-select-row">
-                      <label className="sim-select-lbl" htmlFor="sim-quick-select">
-                        Atau pilih langsung dari peserta resmi:
-                      </label>
-                      <select
-                        id="sim-quick-select"
-                        className="quiz-input sim-select-dropdown"
-                        value={simulationNik}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSimulationNik(val);
-                          if (val) {
-                            void handleSimulateNikSubmit(undefined, val);
-                          }
-                        }}
-                      >
-                        <option value="">-- Pilih Peserta untuk Simulasi --</option>
-                        {ATTENDANCE_ROSTER.map((m) => (
-                          <option key={m.nik} value={m.nik}>
-                            {m.nama} ({m.nik}) — {m.namaKelompok}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Simulation Options (Bypass GPS & Bypass Device Lock) */}
-                    <div className="sim-options-grid">
-                      <label className="sim-checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={simulationBypassGps}
-                          onChange={(e) => setSimulationBypassGps(e.target.checked)}
-                        />
-                        <span>Bypass Lokasi GPS (Khusus Simulasi)</span>
-                      </label>
-
-                      <label className="sim-checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={simulationBypassDeviceLock}
-                          onChange={(e) => setSimulationBypassDeviceLock(e.target.checked)}
-                        />
-                        <span>Bypass Kunci 1 Perangkat (Bisa Coba Peserta Lain)</span>
-                      </label>
-                    </div>
-                  </form>
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
           {/* RESULTS VIEWPORT: SEARCHING RADAR ANIMATION OR TYPEWRITER ID CARD */}
@@ -907,7 +1064,7 @@ export function AttendanceApp() {
                       <span className="id-card-number">
                         NO. {String(scannedMember.no).padStart(2, "0")} / 35
                       </span>
-                      {isSimulationOpen && (
+                      {isLocalhost && isSimulationOpen && (
                         <button
                           type="button"
                           className="btn-sim-reset-card"

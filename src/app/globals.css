@@ -2566,6 +2566,66 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
   margin-bottom: 22px;
 }
 
+/* Html5Qrcode Scanner Container */
+.scanner-camera-container.is-hidden {
+  display: none !important;
+}
+
+.scanner-camera-container.is-active {
+  display: block !important;
+  width: 100%;
+  min-height: 260px;
+  background: #000;
+  border: 2px solid var(--color-gold);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+#attendance-camera-reader {
+  width: 100% !important;
+  background: #0a0807 !important;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#attendance-camera-reader video {
+  width: 100% !important;
+  height: auto !important;
+  max-height: 380px !important;
+  object-fit: cover !important;
+  border-radius: 4px;
+}
+
+#attendance-camera-reader canvas {
+  display: none !important;
+}
+
+#attendance-camera-reader img[alt="Info icon"] {
+  display: none !important;
+}
+
+#attendance-camera-reader__scan_region {
+  min-height: 220px;
+}
+
+#attendance-camera-reader__dashboard {
+  padding: 8px !important;
+  background: #140f0c !important;
+}
+
+#attendance-camera-reader__dashboard_section_csr button {
+  background: var(--color-gold) !important;
+  color: #100f12 !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+  border: none !important;
+  border-radius: 3px !important;
+  cursor: pointer !important;
+}
+
 .camera-active-box {
   position: relative;
   background: #000;
@@ -3173,6 +3233,150 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
 .location-verification-card.is-warning {
   border-color: #d48806;
   background: rgba(212, 136, 6, 0.08);
+}
+
+.location-verification-card.is-rejected {
+  border-color: #ff4d4f;
+  background: rgba(255, 77, 79, 0.08);
+}
+
+.device-gps-info-box {
+  background: #120e0d;
+  border: 1px solid #3d2b20;
+  border-radius: 4px;
+  padding: 12px;
+  margin-top: 10px;
+}
+
+.gps-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #281d16;
+  padding-bottom: 8px;
+}
+
+.gps-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--color-gold);
+}
+
+.gps-status-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gps-status-pill.pill-checking {
+  background: #3d2f1f;
+  color: var(--color-gold);
+}
+
+.gps-status-pill.pill-valid {
+  background: rgba(82, 196, 26, 0.2);
+  color: #73d13d;
+  border: 1px solid #52c41a;
+}
+
+.gps-status-pill.pill-invalid {
+  background: rgba(255, 77, 79, 0.2);
+  color: #ff7875;
+  border: 1px solid #ff4d4f;
+}
+
+.gps-status-pill.pill-denied {
+  background: rgba(255, 77, 79, 0.2);
+  color: #ff7875;
+  border: 1px solid #ff4d4f;
+}
+
+.gps-status-pill.pill-standby {
+  background: #261d18;
+  color: var(--muted);
+}
+
+.gps-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.gps-metric-item {
+  background: #1a1412;
+  border: 1px solid #302319;
+  padding: 6px 8px;
+  border-radius: 3px;
+}
+
+.gps-metric-item .metric-lbl {
+  display: block;
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.gps-metric-item .metric-val {
+  display: block;
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--color-cream);
+  word-break: break-all;
+}
+
+.gps-metric-item .text-success {
+  color: #73d13d !important;
+  font-weight: 700;
+}
+
+.gps-metric-item .text-danger {
+  color: #ff7875 !important;
+  font-weight: 700;
+}
+
+.gps-pending-text {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.loc-strict-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: rgba(255, 77, 79, 0.12);
+  border-left: 3px solid #ff4d4f;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #ffccc7;
+  margin-bottom: 10px;
+  line-height: 1.4;
+  border-radius: 2px;
+}
+
+.loc-strict-alert.alert-denied {
+  border-color: #faad14;
+  background: rgba(250, 173, 20, 0.12);
+  color: #ffe58f;
+}
+
+.loc-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
 }
 
 .loc-card-top {
