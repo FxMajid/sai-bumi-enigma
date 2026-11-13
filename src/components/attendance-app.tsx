@@ -609,7 +609,13 @@ export function AttendanceApp() {
         if (scanner.isScanning) {
           scanner
             .stop()
-            .then(() => scanner.clear())
+            .then(() => {
+              try {
+                scanner.clear();
+              } catch {
+                // ignore
+              }
+            })
             .catch(() => {});
         } else {
           try {
@@ -639,7 +645,7 @@ export function AttendanceApp() {
         const readerElem = document.getElementById("attendance-camera-reader");
         if (!readerElem) return;
 
-        const { Html5Qrcode } = await import("html5-qrcode");
+        const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
         if (!active) return;
 
         if (html5QrCodeRef.current) {
@@ -656,6 +662,15 @@ export function AttendanceApp() {
 
         const scanner = new Html5Qrcode("attendance-camera-reader", {
           verbose: false,
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.QR_CODE,
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+          ],
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
         });
 
         html5QrCodeRef.current = scanner;
@@ -670,9 +685,13 @@ export function AttendanceApp() {
           });
         };
 
-        // Scan the full camera viewport without restrictive qrbox crop
         const scanConfig = {
-          fps: 15,
+          fps: 20,
+          videoConstraints: {
+            facingMode: "environment",
+            width: { min: 640, ideal: 1280, max: 1920 },
+            height: { min: 480, ideal: 720, max: 1080 },
+          },
         };
 
         try {
@@ -687,10 +706,28 @@ export function AttendanceApp() {
           if (active) {
             await scanner.start(
               { facingMode: "user" },
-              scanConfig,
+              {
+                ...scanConfig,
+                videoConstraints: {
+                  facingMode: "user",
+                  width: { min: 640, ideal: 1280, max: 1920 },
+                  height: { min: 480, ideal: 720, max: 1080 },
+                },
+              },
               scanSuccessCallback,
               () => {}
             );
+          }
+        }
+
+        if (!active) {
+          try {
+            if (scanner.isScanning) {
+              await scanner.stop();
+            }
+            scanner.clear();
+          } catch {
+            // ignore
           }
         }
       } catch (err: unknown) {
@@ -711,7 +748,13 @@ export function AttendanceApp() {
         if (scanner.isScanning) {
           scanner
             .stop()
-            .then(() => scanner.clear())
+            .then(() => {
+              try {
+                scanner.clear();
+              } catch {
+                // ignore
+              }
+            })
             .catch(() => {});
         } else {
           try {
@@ -893,9 +936,8 @@ export function AttendanceApp() {
               <div
                 id="attendance-camera-reader"
                 className={`scanner-camera-container ${isCameraActive ? "is-active" : "is-hidden"}`}
-              >
-                {isCameraActive && <div className="scanner-laser-line" />}
-              </div>
+              />
+              {isCameraActive && <div className="scanner-laser-line" />}
 
               {!isCameraActive && (
                 <div className="camera-idle-box">

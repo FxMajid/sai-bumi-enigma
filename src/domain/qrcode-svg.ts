@@ -63,7 +63,7 @@ export function generateQrSvg(
 ): string {
   const matrix = generateQrMatrix(text);
   const matrixSize = matrix.length;
-  const quietZone = options.quietZone ?? 2;
+  const quietZone = options.quietZone ?? 4;
   const totalModules = matrixSize + quietZone * 2;
   const pixelSize = options.size ?? 220;
   const color = options.color ?? "#000000";

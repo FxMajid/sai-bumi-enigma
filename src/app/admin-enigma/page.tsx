@@ -401,10 +401,10 @@ export default function AdminPage() {
   // Download QR Code SVG (Nama file: [Nama] - [NIK] - QR.svg)
   const handleDownloadQr = (member: AttendanceMember) => {
     const svgString = generateQrSvg(member.nik, {
-      size: 320,
+      size: 360,
       color: "#161314",
       bgColor: "#ffffff",
-      quietZone: 2,
+      quietZone: 4,
     });
     const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1118,10 +1118,10 @@ export default function AdminPage() {
                         className="catalog-qr-svg"
                         dangerouslySetInnerHTML={{
                           __html: generateQrSvg(member.nik, {
-                            size: 96,
+                            size: 140,
                             color: "#161314",
                             bgColor: "#ffffff",
-                            quietZone: 2,
+                            quietZone: 4,
                           }),
                         }}
                       />

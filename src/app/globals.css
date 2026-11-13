@@ -2564,6 +2564,9 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
 /* Camera Box */
 .camera-viewport-wrap {
   margin-bottom: 22px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
 }
 
 /* Html5Qrcode Scanner Container */
@@ -4924,9 +4927,14 @@ code { background: #382a20; color: #f0c675; padding: 2px 5px; overflow-wrap: any
 
 .catalog-qr-svg {
   background: #fff;
-  padding: 4px;
-  border-radius: 3px;
+  padding: 6px;
+  border-radius: 4px;
   display: inline-block;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.catalog-qr-svg svg {
+  display: block;
 }
 
 .catalog-barcode-mono {
